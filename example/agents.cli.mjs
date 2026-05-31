@@ -26,6 +26,7 @@ const exec = promisify(execFile);
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const APP = join(ROOT, 'apps/taskapp');
 const BACKEND = join(APP, 'backend');
+const FRONTEND = join(APP, 'frontend');
 const BRANCH = 'feat/TASK-142-scheduler';
 const APP_READY = existsSync(join(BACKEND, 'node_modules')); // installed → implement/test go live
 const TICKET = 'TASK-142';
@@ -51,13 +52,22 @@ async function ensureRepo() {
   await exec('git', ['-C', APP, '-c', 'user.email=pipeline@local', '-c', 'user.name=pipeline', 'commit', '-m', 'baseline'], { maxBuffer: 32 * 1024 * 1024 }).catch(() => {});
 }
 
-async function npmTest() {
+async function runTests(cwd, label) {
   try {
-    const { stdout, stderr } = await exec('npm', ['test', '--silent'], { cwd: BACKEND, maxBuffer: 64 * 1024 * 1024 });
-    return { ok: true, out: stdout + stderr };
+    const { stdout, stderr } = await exec('npm', ['test', '--silent'], { cwd, maxBuffer: 64 * 1024 * 1024 });
+    return { ok: true, out: `[${label}] PASS\n${stdout}${stderr}` };
   } catch (e) {
-    return { ok: false, out: (e.stdout || '') + (e.stderr || e.message) };
+    return { ok: false, out: `[${label}] FAIL\n${e.stdout || ''}${e.stderr || e.message}` };
   }
+}
+
+// The real CI gate — runs BOTH stacks. Frontend is gated only if it's installed.
+async function npmTest() {
+  const be = await runTests(BACKEND, 'backend');
+  const fe = existsSync(join(FRONTEND, 'node_modules'))
+    ? await runTests(FRONTEND, 'frontend')
+    : { ok: true, out: '[frontend] skipped — run `npm install` in apps/taskapp/frontend to gate the FE' };
+  return { ok: be.ok && fe.ok, out: `${be.out}\n\n${fe.out}` };
 }
 
 // ---- structured-output schemas (trimmed for the CLI's --json-schema) ----------
@@ -220,7 +230,7 @@ export function makeAgents({ writeArtifact }) {
     ].join('\n\n');
     const v = await runClaude({
       agentPromptPath: 'agents/07-reviewer.md',
-      prompt: `Spec:\n${JSON.stringify(ledger.artifacts.spec, null, 2)}\n\nChanges under review:\n${changes}\n\nAdversarially review against the coding standards. Default to "block" if a standard is plausibly violated and unverified.`,
+      prompt: `Spec:\n${JSON.stringify(ledger.artifacts.spec, null, 2)}\n\nChanges under review:\n${changes}\n\nReview against the spec and coding standards. Block ONLY if an acceptance criterion is unmet, an in-scope change (backend OR frontend) is missing, or there is a real standards violation or bug. Record cosmetic/minor concerns as non-blocking findings — do not block on those.`,
       schema: VERDICT_SCHEMA,
     });
     writeArtifact('07-review-verdict.json', JSON.stringify(v, null, 2));
@@ -250,24 +260,28 @@ export function makeAgents({ writeArtifact }) {
   const liveImplementer = async ({ ledger, attempt }) => {
     if (attempt === 1) { await ensureRepo(); await git(['checkout', '-B', BRANCH]); }
     const fix = ledger.testFail
-      ? `\n\nThe test suite is currently FAILING — fix the implementation. Tail of the output:\n${String(ledger.testFail).slice(-3500)}`
+      ? `\n\nThe backend test suite is currently FAILING — fix the implementation. Tail of the output:\n${String(ledger.testFail).slice(-3500)}`
+      : '';
+    const prior = ledger.artifacts.review;
+    const reviewNote = prior && prior.verdict === 'block'
+      ? `\n\nA prior code review BLOCKED this change. Address EVERY finding below before finishing:\n${JSON.stringify(prior.findings, null, 2)}`
       : '';
     const summary = await runClaude({
       agentPromptPath: 'agents/04-implementer.md',
-      prompt: `Implement this plan in the NestJS backend (in-memory store — see CLAUDE.md). Edit files under src/, keep the diff minimal and idiomatic, and keep the build green.\n\nPlan:\n${JSON.stringify(ledger.artifacts.plan, null, 2)}${fix}`,
-      cwd: BACKEND,
+      prompt: `Implement this plan FULL-STACK across apps/taskapp — BOTH the NestJS backend (backend/src) AND the Angular frontend (frontend/src). Implement every slice in the plan, reuse one shared priority/type definition per app, keep diffs minimal and idiomatic, and keep the backend build + tests green (run \`npm --prefix backend test\` to check).\n\nPlan:\n${JSON.stringify(ledger.artifacts.plan, null, 2)}${fix}${reviewNote}`,
+      cwd: APP,
       allowedTools: TOOLS,
       permissionMode: 'acceptEdits',
     });
     writeArtifact('04-implementation-summary.md', summary);
-    return { ok: true, summary: `Implemented on ${BRANCH} (live, attempt ${attempt}).`, artifact: summary };
+    return { ok: true, summary: `Implemented full-stack on ${BRANCH} (live, attempt ${attempt}).`, artifact: summary };
   };
 
   const liveTestAuthor = async ({ ledger }) => {
     const note = await runClaude({
       agentPromptPath: 'agents/05-test-author.md',
-      prompt: `Add or extend Jest specs (src/**/*.spec.ts) that verify EACH acceptance criterion below, then make sure they pass. Do not weaken existing tests.\n\nSpec:\n${JSON.stringify(ledger.artifacts.spec, null, 2)}`,
-      cwd: BACKEND,
+      prompt: `Add or extend Jest specs that verify EACH acceptance criterion, across BOTH stacks: backend specs under backend/src/**/*.spec.ts, and frontend specs under frontend/src/**/*.spec.ts (the frontend uses ts-jest on pure logic — test functions/helpers, not Angular component rendering). Then make sure they pass. Do not weaken existing tests.\n\nSpec:\n${JSON.stringify(ledger.artifacts.spec, null, 2)}`,
+      cwd: APP,
       allowedTools: TOOLS,
       permissionMode: 'acceptEdits',
     });

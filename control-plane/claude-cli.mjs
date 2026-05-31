@@ -50,14 +50,18 @@ function systemPrompt(agentPromptPath) {
  * @returns {Promise<string|object>} raw text, or the parsed object when `schema` is given
  */
 export async function runClaude({ prompt, agentPromptPath, allowedTools = [], schema, cwd, permissionMode = "plan" }) {
+  // Ask for strict JSON in the prompt — more reliable across CLI versions than --json-schema,
+  // which returned malformed output (e.g. `{ title }`) on some builds.
+  const finalPrompt = schema
+    ? `${prompt}\n\nIMPORTANT: Respond with ONLY a single valid JSON object and nothing else — no markdown fences, no commentary. Use double-quoted keys and string values. It must conform to this JSON Schema:\n${JSON.stringify(schema)}`
+    : prompt;
   const args = [
-    "-p", prompt,
+    "-p", finalPrompt,
     "--output-format", "json",
     "--append-system-prompt", systemPrompt(agentPromptPath),
     "--permission-mode", permissionMode,
   ];
   if (allowedTools.length) args.push("--allowedTools", allowedTools.join(","));
-  if (schema) args.push("--json-schema", JSON.stringify(schema));
 
   let stdout;
   try {
@@ -77,12 +81,19 @@ export async function runClaude({ prompt, agentPromptPath, allowedTools = [], sc
   return coerceJson(result);
 }
 
-// Structured agents should return JSON. Be tolerant of versions that wrap it in prose.
+// Structured agents should return JSON. Be tolerant of versions that wrap it in prose or fences.
 function coerceJson(result) {
   if (result && typeof result === "object") return result;
-  const s = String(result);
+  let s = String(result).trim();
+  // strip a ```json ... ``` (or bare ```) fence if present
+  const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fence) s = fence[1].trim();
   try { return JSON.parse(s); } catch { /* fall through */ }
-  const m = s.match(/\{[\s\S]*\}/);
-  if (m) return JSON.parse(m[0]);
-  throw new Error("Expected JSON output from claude but could not parse it:\n" + s);
+  // last resort: take from the first "{" to the last "}"
+  const a = s.indexOf("{");
+  const b = s.lastIndexOf("}");
+  if (a !== -1 && b > a) {
+    try { return JSON.parse(s.slice(a, b + 1)); } catch { /* fall through */ }
+  }
+  throw new Error("Expected a JSON object from claude but could not parse it. Raw output:\n" + s.slice(0, 1000));
 }

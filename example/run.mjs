@@ -83,10 +83,17 @@ async function approveGate(name, ledger) {
   return { approved: true, by: name === "human-approve-spec" ? "PM (auto-approved in demo)" : "Tech lead (auto-approved in demo)" };
 }
 
-const request = readFileSync(join(__dir, "feature-request.md"), "utf8");
+// Input precedence: a CLI arg (inline text OR a path to a file) → else feature-request.md.
+//   node example/run.mjs "Add a CSV export endpoint for tasks"
+//   node example/run.mjs ./my-request.md
+const arg = process.argv[2];
+const request = arg
+  ? (existsSync(arg) ? readFileSync(arg, "utf8") : arg)
+  : readFileSync(join(__dir, "feature-request.md"), "utf8");
 
+const firstLine = request.split("\n").find((l) => l.trim() && !l.startsWith("#"))?.trim() ?? request.trim();
 console.log(c.b("\n🤖 Agentic Engineering Pipeline — demo run"));
-console.log(c.dim("   Feature: deadline-based task scheduler  ·  app: Angular + NestJS"));
+console.log(c.dim("   Request: " + firstLine.slice(0, 80) + (firstLine.length > 80 ? "…" : "")));
 if (LIVE) {
   const appReady = existsSync(join(__dir, "../apps/taskapp/backend/node_modules"));
   console.log(c.dim("   LIVE: scout/spec/plan/review/curate call your local `claude`."));

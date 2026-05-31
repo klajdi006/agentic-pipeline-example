@@ -1,7 +1,14 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { CreateTaskDto } from './dto/create-task.dto';
-import { Task } from './task.model';
+import { Task, TaskPriority } from './task.model';
+
+/** Sort weight for priority ordering: high first, then medium, then low. */
+const PRIORITY_RANK: Record<TaskPriority, number> = {
+  high: 0,
+  medium: 1,
+  low: 2,
+};
 
 /**
  * In-memory task store. Production would back this with TypeORM + Postgres
@@ -17,14 +24,26 @@ export class TasksService {
       id: randomUUID(),
       title: dto.title,
       completed: false,
+      priority: dto.priority ?? TaskPriority.medium,
       createdAt: new Date().toISOString(),
     };
     this.tasks.set(task.id, task);
     return task;
   }
 
+  /**
+   * Returns tasks ordered high → medium → low. Equal priorities keep their
+   * original insertion order (stable tiebreaker on the Map's insertion index).
+   */
   findAll(): Task[] {
-    return [...this.tasks.values()];
+    return [...this.tasks.values()]
+      .map((task, index) => ({ task, index }))
+      .sort(
+        (a, b) =>
+          PRIORITY_RANK[a.task.priority] - PRIORITY_RANK[b.task.priority] ||
+          a.index - b.index,
+      )
+      .map(({ task }) => task);
   }
 
   findOne(id: string): Task {

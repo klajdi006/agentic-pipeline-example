@@ -3,21 +3,36 @@
   "verdict": "pass",
   "findings": [
     {
-      "severity": "minor",
-      "rule": "ADR-0001 single-instance sweep",
-      "file": "src/scheduler/scheduler.service.ts",
-      "message": "Add a DB advisory lock before we scale out (follow-up, not blocking)."
+      "severity": "info",
+      "rule": "Validate every external input; reject at the boundary",
+      "file": "apps/taskapp/backend/src/main.ts",
+      "message": "Verified AC-3 holds at the real HTTP boundary, not just in the unit test: a global ValidationPipe({ whitelist: true, transform: true }) is wired in bootstrap, so @IsEnum(TaskPriority) rejects values like \"urgent\" before reaching the service. The spec test uses validateSync directly, which is acceptable given BE e2e specs are explicitly out of scope for this ticket."
     },
     {
       "severity": "info",
-      "rule": "CLAUDE.md UTC",
-      "file": "src/scheduler/scheduler.service.ts",
-      "message": "remindAt now computed on the UTC instant — correct."
+      "rule": "Single shared TaskPriority type reused by model and DTO",
+      "file": "apps/taskapp/backend/src/tasks/task.model.ts",
+      "message": "TaskPriority is declared once as a const-object + matching union and imported by both the DTO (@IsEnum runtime value) and the service. This satisfies the 'define once, reuse' scope item; full libs/shared-types extraction is correctly deferred per the ticket's out-of-scope list."
+    },
+    {
+      "severity": "info",
+      "rule": "Ticket scope coverage",
+      "file": "apps/taskapp/frontend/src/app/features/tasks/task-list.component.ts",
+      "message": "The ticket's in-scope list includes frontend changes (model, api service, task-list rendering/sort), but this diff delivers only the NestJS backend slice. All six acceptance criteria are backend service-level and are fully covered/verified here; the FE rendering has no associated AC. Flagging only so the FE slice is tracked in a separate change, not as a defect in this PR."
+    },
+    {
+      "severity": "info",
+      "rule": "findAll() ordering correctness",
+      "file": "apps/taskapp/backend/src/tasks/tasks.service.ts",
+      "message": "Ordering via PRIORITY_RANK with a decorate-by-index stable tiebreaker is correct and non-mutating (operates on a fresh array copy of the Map values). AC-4 and AC-5 verified by tests; insertion order is preserved for equal priorities."
     }
   ],
   "coveredCriteria": [
     "AC-1",
     "AC-2",
-    "AC-3"
+    "AC-3",
+    "AC-4",
+    "AC-5",
+    "AC-6"
   ]
 }

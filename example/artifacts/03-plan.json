@@ -6,48 +6,50 @@
       "steps": [
         {
           "order": 1,
-          "action": "Add deadline+remindAt to Task entity",
+          "action": "Add a `TaskPriority` union/enum type (`'low' | 'medium' | 'high'`) and a `priority: TaskPriority` field on the `Task` model so every persisted/returned task carries a bounded priority. Export `TaskPriority` for reuse by the DTO.",
           "files": [
-            "src/tasks/entities/task.entity.ts"
+            "apps/taskapp/backend/src/tasks/task.model.ts"
           ],
-          "layer": "entity",
           "satisfies": [
-            "AC-1"
+            "AC-6"
           ]
         },
         {
           "order": 2,
-          "action": "Generate migration",
+          "action": "Add an optional `priority` property to the create DTO, validated with `@IsEnum(TaskPriority)` and `@IsOptional()`, importing `TaskPriority` from the model so an out-of-range value (e.g. `\"urgent\"`) is rejected before reaching the service.",
           "files": [
-            "src/migrations/AddTaskDeadline.ts"
+            "apps/taskapp/backend/src/tasks/dto/create-task.dto.ts"
           ],
-          "layer": "migration",
           "satisfies": [
-            "AC-1"
+            "AC-3"
           ]
         },
         {
           "order": 3,
-          "action": "SchedulerService cron sweep (UTC)",
+          "action": "In the service: default `priority` to `'medium'` when omitted on create, persist the supplied/defaulted value, and order `findAll()` high → medium → low using a fixed rank map with a stable tiebreaker on insertion order (preserve original index for equal priorities).",
           "files": [
-            "src/scheduler/scheduler.service.ts",
-            "src/scheduler/scheduler.module.ts"
+            "apps/taskapp/backend/src/tasks/tasks.service.ts"
           ],
-          "layer": "service",
           "satisfies": [
-            "AC-2"
+            "AC-1",
+            "AC-2",
+            "AC-4",
+            "AC-5",
+            "AC-6"
           ]
         },
         {
           "order": 4,
-          "action": "GET /tasks/due-soon",
+          "action": "Add unit tests covering: default `medium` when priority omitted, explicit `high` persisted/returned, invalid value rejected (no persistence), `findAll()` ordering high→medium→low, and stable insertion-order tiebreaker for equal priorities.",
           "files": [
-            "src/tasks/tasks.controller.ts",
-            "src/tasks/tasks.service.ts"
+            "apps/taskapp/backend/src/tasks/tasks.service.spec.ts"
           ],
-          "layer": "controller",
           "satisfies": [
-            "AC-3"
+            "AC-1",
+            "AC-2",
+            "AC-3",
+            "AC-4",
+            "AC-5"
           ]
         }
       ]
@@ -57,24 +59,52 @@
       "steps": [
         {
           "order": 1,
-          "action": "Deadline field on task form",
+          "action": "Add a `TaskPriority` union (`'low' | 'medium' | 'high'`) and a `priority` field on the frontend `Task` model, mirroring the backend contract.",
           "files": [
-            "src/app/features/tasks/task-form.component.ts"
+            "apps/taskapp/frontend/src/app/shared/task.model.ts"
           ],
-          "layer": "component",
           "satisfies": [
-            "AC-1"
+            "AC-6"
           ]
         },
         {
           "order": 2,
-          "action": "DueSoonComponent sorted by deadline",
+          "action": "Allow the typed API service `create()` method to pass an optional `priority` in the request payload, typed against `TaskPriority`.",
           "files": [
-            "src/app/features/tasks/due-soon.component.ts"
+            "apps/taskapp/frontend/src/app/core/api/tasks.service.ts"
           ],
-          "layer": "component",
           "satisfies": [
-            "AC-3"
+            "AC-2",
+            "AC-6"
+          ]
+        },
+        {
+          "order": 3,
+          "action": "Display each task's `priority` in the read-only task list and sort the rendered list high → medium → low to match the backend ordering, deriving the sorted view via `computed()`.",
+          "files": [
+            "apps/taskapp/frontend/src/app/features/tasks/task-list.component.ts"
+          ],
+          "satisfies": [
+            "AC-4",
+            "AC-5",
+            "AC-6"
+          ]
+        }
+      ]
+    },
+    {
+      "slice": "shared",
+      "steps": [
+        {
+          "order": 1,
+          "action": "Define the `TaskPriority` enum/union (`'low' | 'medium' | 'high'`) once per app and reuse it across the model and DTO (backend) / model and API service (frontend); full `libs/shared-types/` extraction is deferred (out of scope).",
+          "files": [
+            "apps/taskapp/backend/src/tasks/task.model.ts",
+            "apps/taskapp/frontend/src/app/shared/task.model.ts"
+          ],
+          "satisfies": [
+            "AC-3",
+            "AC-6"
           ]
         }
       ]

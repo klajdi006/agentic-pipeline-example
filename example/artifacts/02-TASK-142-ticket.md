@@ -1,18 +1,19 @@
-# TASK-142 — Deadline-based task scheduler with reminders
+# TASK-142 — Add task priorities
 
-**Problem:** Users can't set deadlines or get reminded before tasks are due, so time-sensitive tasks slip.
+**Problem:** Tasks currently have no priority, so users cannot distinguish urgent work from low-importance work and the list has no meaningful ordering beyond insertion order. We need a bounded, validated priority on each task so it can be set at creation, persisted, returned in API responses, and used to order the task list.
 
-**In scope:** deadline + reminder on a task; 1-hour-before reminder; Due soon view sorted by deadline
-**Out of scope:** recurring tasks; calendar integrations; multi-channel notifications
+**In scope:** Add a bounded `priority` field (`low` | `medium` | `high`) to the Task model; Accept an optional `priority` on task creation, defaulting to `medium` when omitted; Validate `priority` on the create DTO with `class-validator` (`@IsEnum`, `@IsOptional`); Return `priority` on every task in API responses; Order `findAll()` results by priority (high → medium → low) with a stable tiebreaker on insertion order; Render priority on the read-only frontend task list and sort to match the backend ordering; Define a single shared `TaskPriority` type reused by the model and DTO
+**Out of scope:** Editing priority after creation (no `UpdateTaskDto` / `PATCH /api/tasks/:id` route in this ticket); Filtering tasks by priority; Standing up `libs/shared-types/` as a shared package (keep the existing per-app model pattern; defer the monorepo path-alias work); Building a create/edit reactive form on the frontend (none exists today; list stays read-only); Adopting unrelated CLAUDE.md conventions not already present in the app (`TzDatePipe`, FE Testing Library, BE e2e specs) beyond what this feature requires; Database migrations (storage is in-memory; N/A)
 
 ## Changes
-- **Backend:** Task entity: deadline, remindAt, scheduler module (cron sweep), GET /tasks/due-soon, migration
-- **Frontend:** deadline field on task form, DueSoonComponent, TzDatePipe rendering
-- **Shared:** Task contract: deadline, remindAt
+- **Backend:** `apps/taskapp/backend/src/tasks/task.model.ts`: add `TaskPriority` type and `priority: TaskPriority` on `Task`, `apps/taskapp/backend/src/tasks/dto/create-task.dto.ts`: add optional `priority` validated with `@IsEnum(TaskPriority)` and `@IsOptional()`, `apps/taskapp/backend/src/tasks/tasks.service.ts`: default `priority` to `medium` on create, persist it, and order `findAll()` by priority with insertion-order tiebreaker, `apps/taskapp/backend/src/tasks/tasks.service.spec.ts`: add unit cases for default, explicit value, invalid value rejection, and ordering
+- **Frontend:** `apps/taskapp/frontend/src/app/shared/task.model.ts`: add `TaskPriority` union and `priority` field on `Task`, `apps/taskapp/frontend/src/app/core/api/tasks.service.ts`: allow `create()` to pass an optional `priority`, `apps/taskapp/frontend/src/app/features/tasks/task-list.component.ts`: display each task's priority and sort the list high → medium → low
+- **Shared:** Define the `TaskPriority` enum/union once per app (`low` | `medium` | `high`) and reuse it across the model and DTO; full `libs/shared-types/` extraction is deferred (out of scope)
 
 ## Acceptance criteria
-- **AC-1** — Given a task with a deadline, when it is created, then remindAt is stored as UTC = deadline − 1h.
-- **AC-2** — Given remindAt is within the next minute, when the cron sweep runs, then exactly one reminder is emitted.
-- **AC-3** — Given tasks with deadlines, when I open Due soon, then they appear sorted ascending by deadline.
-
-_Validated against schemas/spec.schema.json. Awaiting human approval._
+- **AC-1** — Given a valid create-task payload that omits `priority`, when a task is created via the tasks service, then the created task is persisted with `priority` equal to `"medium"`.
+- **AC-2** — Given a valid create-task payload with `priority` set to `"high"`, when a task is created via the tasks service, then the created task is persisted and returned with `priority` equal to `"high"`.
+- **AC-3** — Given a create-task payload whose `priority` is not one of `"low"`, `"medium"`, `"high"` (e.g. `"urgent"`), when the payload is validated against `CreateTaskDto` using `class-validator`, then validation fails and the value is rejected (the service/controller does not persist the task).
+- **AC-4** — Given three tasks created in the order medium, high, low, when `findAll()` is called on the tasks service, then the returned array is ordered high, medium, low.
+- **AC-5** — Given two tasks created with the same `priority`, when `findAll()` is called on the tasks service, then those two tasks retain their relative insertion order (stable tiebreaker).
+- **AC-6** — Given any successfully created task, when it is returned from the service or controller, then the response object includes a `priority` property whose value is one of `"low"`, `"medium"`, `"high"`.
