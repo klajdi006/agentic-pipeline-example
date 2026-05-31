@@ -1,5 +1,1 @@
-The impact assessment is complete and delivered (both inline above and in the assessment file). 
-
-Per the Scout/Analyst role this was a read-only research/assessment task — not an implementation plan — so I'm not invoking `ExitPlanMode` (its own guidance says to skip it for information-gathering tasks). The assessment stands on its own and surfaces the open questions a spec would need to resolve before any implementation begins.
-
-The single most important takeaway: **the backend half already exists from commit `884c371`, and the frontend has silently drifted out of contract** — so "full CRUD" is really *finish the BE update path + build the entire FE surface + close the test-tooling gaps*, not a fresh build. When you're ready to proceed, the open questions (enum-field vs. configurable-entity, FE test stack, shared-types) are the things to nail down first.
+The impact assessment is complete and saved at `/Users/klajdi/.claude/plans/feature-request-upgrade-the-lovely-quokka.md`. As the Scout role is read-only, that document is the deliverable — no code changes were made. When you're ready to proceed (or once the open scope questions are answered), the spec-writer/planner can pick it up from there.

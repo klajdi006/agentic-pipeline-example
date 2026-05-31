@@ -1,5 +1,4 @@
 import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
-import { CommonModule } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { PriorityResponse } from '@taskapp/shared-types';
 import { PrioritiesApiService } from '../../core/api/priorities.service';
@@ -9,20 +8,23 @@ import { removePriorityById } from './priority.logic';
 @Component({
   selector: 'app-priority-list',
   standalone: true,
-  imports: [CommonModule, RouterLink, TzDatePipe],
+  imports: [RouterLink, TzDatePipe],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <h2>Priorities</h2>
     <a routerLink="/priorities/new">New priority</a>
     <ul>
-      <li *ngFor="let p of priorities()">
-        <a [routerLink]="['/priorities', p.id]">{{ p.name }}</a>
-        — level {{ p.level }}
-        <small>({{ p.createdAt | tzDate }})</small>
-        <button type="button" (click)="remove(p.id)">Delete</button>
-      </li>
+      @for (p of priorities(); track p.id) {
+        <li>
+          <a [routerLink]="['/priorities', p.id]">{{ p.name }}</a>
+          — level {{ p.level }}
+          <small>({{ p.createdAt | tzDate }})</small>
+          <button type="button" (click)="remove(p.id)">Delete</button>
+        </li>
+      } @empty {
+        <p>No priorities yet.</p>
+      }
     </ul>
-    <p *ngIf="priorities().length === 0">No priorities yet.</p>
   `,
 })
 export class PriorityListComponent implements OnInit {

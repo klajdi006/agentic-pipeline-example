@@ -2,37 +2,64 @@
   "ticketKey": "TASK-142",
   "slices": [
     {
-      "slice": "shared",
+      "slice": "frontend",
       "steps": [
         {
           "order": 1,
-          "action": "Create the shared-types package (does not yet exist in the repo) with a package.json and barrel index so both FE and BE can import a single source of truth for priority contracts.",
+          "action": "Bump Angular and Angular CLI packages (@angular/core, common, forms, platform-browser, router and CLI/build tooling) from ^18.2.0 to ^21 and run the official `ng update @angular/core @angular/cli` migrations; verify the workspace builds green.",
           "files": [
-            "libs/shared-types/package.json",
-            "libs/shared-types/src/index.ts"
+            "apps/taskapp/frontend/package.json",
+            "apps/taskapp/frontend/package-lock.json"
           ],
-          "satisfies": [
-            "AC1",
-            "AC3",
-            "AC4",
-            "AC6"
-          ]
+          "layer": "component",
+          "satisfies": []
         },
         {
           "order": 2,
-          "action": "Define the priority contracts: a Priority value/type (mirroring the const-object + union pattern used in apps/taskapp/backend/src/tasks/task.model.ts), plus CreatePriorityRequest, UpdatePriorityRequest (partial of create), and PriorityResponse (id, name/label, numeric rank/level, createdAt UTC ISO-8601 string). Export from index.ts.",
+          "action": "Migrate all templates from structural directives (*ngFor/*ngIf) to built-in control-flow blocks: @for (with mandatory track) and @if/@switch. Drop the now-unneeded CommonModule import from each component's imports array.",
           "files": [
-            "libs/shared-types/src/priority.contract.ts",
-            "libs/shared-types/src/index.ts"
+            "apps/taskapp/frontend/src/app/features/tasks/task-list.component.ts",
+            "apps/taskapp/frontend/src/app/features/priorities/priority-list.component.ts",
+            "apps/taskapp/frontend/src/app/features/priorities/priority-create.component.ts",
+            "apps/taskapp/frontend/src/app/features/priorities/priority-edit.component.ts"
           ],
-          "satisfies": [
-            "AC1",
-            "AC2",
-            "AC3",
-            "AC4",
-            "AC6",
-            "AC7"
-          ]
+          "layer": "component",
+          "satisfies": []
+        },
+        {
+          "order": 3,
+          "action": "Confirm ChangeDetectionStrategy.OnPush is set on every standalone component and convert any remaining mutable/view state to signal()/computed(); keep date rendering via TzDatePipe. No HttpClient calls move out of the typed core/api services.",
+          "files": [
+            "apps/taskapp/frontend/src/app/app.component.ts",
+            "apps/taskapp/frontend/src/app/features/tasks/task-list.component.ts",
+            "apps/taskapp/frontend/src/app/features/priorities/priority-list.component.ts",
+            "apps/taskapp/frontend/src/app/features/priorities/priority-create.component.ts",
+            "apps/taskapp/frontend/src/app/features/priorities/priority-edit.component.ts"
+          ],
+          "layer": "component",
+          "satisfies": []
+        },
+        {
+          "order": 4,
+          "action": "Update existing component specs to assert the migrated control-flow output and signal-based state so coverage on changed files stays >=80%.",
+          "files": [
+            "apps/taskapp/frontend/src/app/features/priorities/priority-list.component.spec.ts",
+            "apps/taskapp/frontend/src/app/features/priorities/priority-create.component.spec.ts",
+            "apps/taskapp/frontend/src/app/features/priorities/priority-edit.component.spec.ts"
+          ],
+          "layer": "test",
+          "satisfies": []
+        },
+        {
+          "order": 5,
+          "action": "Update the 'Add an Angular feature' skill and CODING_STANDARDS to mandate Angular v21, signals/computed for state, OnPush on every component, and @if/@for/@switch control-flow blocks (replacing references to *ngIf/*ngFor).",
+          "files": [
+            "apps/taskapp/.knowledge/skills/add-angular-feature.md",
+            ".knowledge/skills/add-angular-feature.md",
+            ".knowledge/CLAUDE.md"
+          ],
+          "layer": "component",
+          "satisfies": []
         }
       ]
     },
@@ -41,200 +68,17 @@
       "steps": [
         {
           "order": 1,
-          "action": "Create the in-memory Priority model/entity for the priorities resource (id, fields from the contract, createdAt as UTC ISO-8601), implementing the shared Priority contract from libs/shared-types.",
+          "action": "Add a Jest e2e spec that boots TasksModule via Nest Test + supertest (mirroring the existing priorities e2e harness with a whitelist ValidationPipe) and verifies the task API contract the upgraded frontend depends on remains byte-for-byte unchanged: POST /tasks returns 201 with {id,title,completed:false,createdAt UTC ISO}; GET /tasks returns 200 array of Task shape; PATCH /tasks/:id/complete returns 200 with completed:true; DELETE /tasks/:id returns 200 {ok:true} then GET /tasks/:id returns 404; POST /tasks with empty/missing title returns 400 and creates nothing. No production backend code is modified.",
           "files": [
-            "apps/taskapp/backend/src/priorities/entities/priority.model.ts"
+            "apps/taskapp/backend/test/tasks.e2e-spec.ts"
           ],
+          "layer": "test",
           "satisfies": [
-            "AC1",
-            "AC3",
-            "AC4"
-          ]
-        },
-        {
-          "order": 2,
-          "action": "Create CreatePriorityDto and UpdatePriorityDto with class-validator decorators (mirroring apps/taskapp/backend/src/tasks/dto/create-task.dto.ts); UpdatePriorityDto makes fields optional. These enforce 400 on invalid/missing input.",
-          "files": [
-            "apps/taskapp/backend/src/priorities/dto/create-priority.dto.ts",
-            "apps/taskapp/backend/src/priorities/dto/update-priority.dto.ts"
-          ],
-          "satisfies": [
-            "AC2",
-            "AC7"
-          ]
-        },
-        {
-          "order": 3,
-          "action": "Implement PrioritiesService with an in-memory Map (pattern from apps/taskapp/backend/src/tasks/tasks.service.ts): create (randomUUID + createdAt ISO string), findAll, findOne (throws NotFoundException), update (merge valid fields, preserve unchanged, throw NotFoundException on missing), remove (throw NotFoundException on missing).",
-          "files": [
-            "apps/taskapp/backend/src/priorities/priorities.service.ts"
-          ],
-          "satisfies": [
-            "AC1",
-            "AC3",
-            "AC4",
-            "AC5",
-            "AC6",
-            "AC8"
-          ]
-        },
-        {
-          "order": 4,
-          "action": "Implement the thin PrioritiesController (pattern from apps/taskapp/backend/src/tasks/tasks.controller.ts): POST / (201 create), GET / (list), GET /:id, PATCH /:id (complete the missing update path), DELETE /:id returning a success status. Delegate all logic to the service.",
-          "files": [
-            "apps/taskapp/backend/src/priorities/priorities.controller.ts"
-          ],
-          "satisfies": [
-            "AC1",
-            "AC3",
-            "AC4",
-            "AC5",
-            "AC6",
-            "AC8"
-          ]
-        },
-        {
-          "order": 5,
-          "action": "Create PrioritiesModule declaring the controller and service, then register it in AppModule imports alongside TasksModule.",
-          "files": [
-            "apps/taskapp/backend/src/priorities/priorities.module.ts",
-            "apps/taskapp/backend/src/app.module.ts"
-          ],
-          "satisfies": [
-            "AC1",
-            "AC3",
-            "AC4",
-            "AC5",
-            "AC6",
-            "AC8"
-          ]
-        },
-        {
-          "order": 6,
-          "action": "Add Jest unit tests for PrioritiesService covering create, list, get, update (changed + preserved fields), delete, and NotFoundException on missing ids (pattern from apps/taskapp/backend/src/tasks/tasks.service.spec.ts).",
-          "files": [
-            "apps/taskapp/backend/src/priorities/priorities.service.spec.ts"
-          ],
-          "satisfies": [
-            "AC1",
-            "AC3",
-            "AC4",
-            "AC5",
-            "AC6",
-            "AC8"
-          ]
-        },
-        {
-          "order": 7,
-          "action": "Add e2e controller tests via supertest with a ValidationPipe-enabled app, asserting 201 create, 400 on invalid create/update, 200 list/get/update, 404 on missing id for GET/PATCH/DELETE, and that DELETE then GET returns 404.",
-          "files": [
-            "apps/taskapp/backend/test/priorities.e2e-spec.ts"
-          ],
-          "satisfies": [
-            "AC1",
-            "AC2",
-            "AC3",
-            "AC4",
-            "AC5",
-            "AC6",
-            "AC7",
-            "AC8"
-          ]
-        }
-      ]
-    },
-    {
-      "slice": "frontend",
-      "steps": [
-        {
-          "order": 1,
-          "action": "Add a typed priorities API service that returns shared-types contracts for list, get, create, update, and delete; components must consume this rather than injecting HttpClient (pattern from apps/taskapp/frontend/src/app/core/api/tasks.service.ts).",
-          "files": [
-            "apps/taskapp/frontend/src/app/core/api/priorities.service.ts"
-          ],
-          "satisfies": [
-            "AC1",
-            "AC3",
-            "AC4",
-            "AC6",
-            "AC8"
-          ]
-        },
-        {
-          "order": 2,
-          "action": "Add a TzDatePipe to render UTC timestamps in the user's timezone (referenced by CLAUDE.md but not yet present in the repo), used by the priority views.",
-          "files": [
-            "apps/taskapp/frontend/src/app/shared/tz-date.pipe.ts"
-          ],
-          "satisfies": [
-            "AC3",
-            "AC4"
-          ]
-        },
-        {
-          "order": 3,
-          "action": "Build the standalone OnPush priorities list component using signal()/computed() for view state, loading via the API service and rendering fields plus createdAt through TzDatePipe; include a delete action.",
-          "files": [
-            "apps/taskapp/frontend/src/app/features/priorities/priority-list.component.ts"
-          ],
-          "satisfies": [
-            "AC3",
-            "AC4",
-            "AC8"
-          ]
-        },
-        {
-          "order": 4,
-          "action": "Build the standalone OnPush create component with a typed reactive form whose validators mirror CreatePriorityDto, submitting via the API service.",
-          "files": [
-            "apps/taskapp/frontend/src/app/features/priorities/priority-create.component.ts"
-          ],
-          "satisfies": [
-            "AC1",
-            "AC2"
-          ]
-        },
-        {
-          "order": 5,
-          "action": "Build the standalone OnPush edit component that loads an existing priority by id, prefills a typed reactive form, and submits updates via the API service preserving unchanged fields.",
-          "files": [
-            "apps/taskapp/frontend/src/app/features/priorities/priority-edit.component.ts"
-          ],
-          "satisfies": [
-            "AC6",
-            "AC7"
-          ]
-        },
-        {
-          "order": 6,
-          "action": "Introduce routing (the app currently has none): add an app.routes.ts with lazy loadComponent routes for list/create/edit, wire provideRouter into app.config.ts, and add a router-outlet plus a priorities nav entry in app.component.ts.",
-          "files": [
-            "apps/taskapp/frontend/src/app/app.routes.ts",
-            "apps/taskapp/frontend/src/app/app.config.ts",
-            "apps/taskapp/frontend/src/app/app.component.ts"
-          ],
-          "satisfies": [
-            "AC3",
-            "AC4",
-            "AC6"
-          ]
-        },
-        {
-          "order": 7,
-          "action": "Add Testing Library component tests covering the CRUD acceptance criteria: rendering the list, creating with valid input, surfacing validation errors on invalid input, editing an existing priority, and deleting one.",
-          "files": [
-            "apps/taskapp/frontend/src/app/features/priorities/priority-list.component.spec.ts",
-            "apps/taskapp/frontend/src/app/features/priorities/priority-create.component.spec.ts",
-            "apps/taskapp/frontend/src/app/features/priorities/priority-edit.component.spec.ts"
-          ],
-          "satisfies": [
-            "AC1",
-            "AC2",
-            "AC3",
-            "AC4",
-            "AC6",
-            "AC7",
-            "AC8"
+            "AC-1",
+            "AC-2",
+            "AC-3",
+            "AC-4",
+            "AC-5"
           ]
         }
       ]

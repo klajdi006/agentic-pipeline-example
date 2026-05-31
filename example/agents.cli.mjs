@@ -303,8 +303,17 @@ export function makeAgents({ writeArtifact }) {
   };
 
   const livePrAgent = async ({ ledger }) => {
-    await git(['add', '-A']);
-    const diff = await git(['diff', '--cached']);
+    const mode = await ensureRepo();
+    let diff;
+    if (mode === 'own') {
+      await git(['add', '-A']);
+      diff = await git(['diff', '--cached']);
+    } else {
+      // Inside a parent repo: don't touch its index/branch — capture a path-scoped working-tree diff.
+      diff = await git(['diff', '--', '.']);
+      const untracked = await git(['ls-files', '--others', '--exclude-standard', '--', '.']);
+      if (untracked.trim()) diff += `\n\n# New (untracked) files:\n${untracked}`;
+    }
     const desc = await runClaude({
       agentPromptPath: 'agents/06-pr-agent.md',
       prompt: `Write a PR description (markdown) for these changes. Reference ${ledger.linear?.identifier || TICKET} and check off each acceptance criterion.\n\nDiff:\n${diff.slice(0, 12000)}`,

@@ -68,12 +68,13 @@ reasoning/authoring agents for real — they call your local `claude` CLI and us
 existing subscription. **No `ANTHROPIC_API_KEY` needed.**
 
 ```bash
-AGENTS=live node example/run.mjs
+# AGENTS=live is set in .env (copy it from .env.example) — no command-line prefix needed.
+node --env-file=.env example/run.mjs "your feature request"
 ```
 
 In live mode: **scout, spec-writer, planner, reviewer, and closer-curator** are real
 `claude -p` calls (with the `.knowledge/` base + their `agents/*.md` prompt as the system
-prompt, and `--json-schema` forcing structured output where a schema exists). The
+prompt, and structured JSON output where a schema applies). The
 infra-bound steps (**implement, test, PR, preview, deploy**) stay simulated because there's
 no real repo/CI mounted yet. The same injected CI failure still demonstrates retry routing,
 and the Reviewer's pass/block verdict is produced live.
@@ -98,8 +99,8 @@ cd apps/taskapp/backend && npm install && cd -
 #    linear.app → Settings → Security & access → Personal API keys
 export LINEAR_API_KEY=lin_api_xxxxxxxx
 
-# Then run live:
-AGENTS=live node example/run.mjs
+# Then run live (AGENTS=live lives in .env, so no prefix needed):
+node --env-file=.env example/run.mjs "your feature request"
 ```
 
 With the backend installed, the **implementer** edits `apps/taskapp/backend/src` on a feature

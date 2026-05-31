@@ -1,5 +1,4 @@
 import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
-import { CommonModule } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { CreatePriorityRequest } from '@taskapp/shared-types';
@@ -9,7 +8,7 @@ import { PRIORITY_LEVEL_MIN, PRIORITY_NAME_MAX_LENGTH } from './priority.logic';
 @Component({
   selector: 'app-priority-create',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule],
+  imports: [ReactiveFormsModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <h2>New priority</h2>
@@ -18,17 +17,17 @@ import { PRIORITY_LEVEL_MIN, PRIORITY_NAME_MAX_LENGTH } from './priority.logic';
         Name
         <input formControlName="name" />
       </label>
-      <p *ngIf="form.controls.name.touched && form.controls.name.invalid">
-        Name is required (max 100 characters).
-      </p>
+      @if (form.controls.name.touched && form.controls.name.invalid) {
+        <p>Name is required (max 100 characters).</p>
+      }
 
       <label>
         Level
         <input type="number" formControlName="level" />
       </label>
-      <p *ngIf="form.controls.level.touched && form.controls.level.invalid">
-        Level must be 0 or greater.
-      </p>
+      @if (form.controls.level.touched && form.controls.level.invalid) {
+        <p>Level must be 0 or greater.</p>
+      }
 
       <button type="submit" [disabled]="form.invalid">Create</button>
     </form>

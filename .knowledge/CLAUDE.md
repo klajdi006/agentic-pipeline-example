@@ -7,7 +7,7 @@
 
 - **Backend:** NestJS, modular. One feature = one module (`src/<feature>/`) with
   `*.module.ts`, `*.controller.ts`, `*.service.ts`, `dto/`, `entities/`.
-- **Frontend:** Angular standalone components, signals for state, typed reactive forms.
+- **Frontend:** Angular **v21** standalone components, signals for state, typed reactive forms, built-in control-flow blocks.
 - **Storage:** the reference app uses an in-memory repository (`apps/taskapp/backend`) to stay dependency-free; production would use TypeORM + Postgres with migrations. While in-memory, there is no migration step.
 - **Shared types:** request/response contracts live in `libs/shared-types/` and are imported by both FE and BE.
 
@@ -21,8 +21,12 @@
 
 ## Frontend conventions
 
-- Components are standalone and `OnPush`.
+- Target **Angular v21**.
+- Components are standalone and `OnPush` (`ChangeDetectionStrategy.OnPush` on every component).
 - State via `signal()` / `computed()`; no `BehaviorSubject` for new code.
+- Templates use the built-in control-flow blocks — `@if` / `@else`, `@for` (always with a
+  `track` expression), `@switch`. Never use `*ngIf` / `*ngFor`, and don't import
+  `CommonModule` for control flow.
 - API access only through typed services in `core/api/`. Components never call `HttpClient` directly.
 - Dates rendered in the user's timezone via the `TzDatePipe`.
 
