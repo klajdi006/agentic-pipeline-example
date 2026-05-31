@@ -1,12 +1,1 @@
-I reviewed the verdict against the existing standards. Here's my Curator assessment:
-
-All four findings are `severity: "info"` — they are the reviewer *confirming* that existing standards were correctly followed, not human corrections surfacing a new rule:
-
-1. **Global `ValidationPipe` at the boundary** — already codified: *"All input is validated with `class-validator` DTOs"* (`.knowledge/CLAUDE.md:17`).
-2. **Single shared `TaskPriority` type** — already codified: shared contracts in `libs/shared-types/` (`:12`); full extraction was explicitly deferred per the ticket's out-of-scope list, so no rule change is warranted.
-3. **FE slice tracked separately** — a one-off scope note for this PR, not a generalizable rule.
-4. **`findAll()` ordering correctness** — a one-off implementation detail, verified by tests; not a standard.
-
-The Curator mandate is to propose updates only from *human review corrections that reflect a general rule* — never to invent rules or restate what's already in the standards. Nothing here meets that bar.
-
-No standards update needed.
+I've stopped for your review — the proposed standards diff is above (and saved to the plan file). Let me know if you'd like me to adjust it, or whether the Curator should open this as the small follow-up PR for human approval.

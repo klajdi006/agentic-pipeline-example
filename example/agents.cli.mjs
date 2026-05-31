@@ -42,14 +42,23 @@ async function git(args) {
     return (e.stdout || '') + (e.stderr || e.message);
   }
 }
-// Ensure apps/taskapp is its OWN git repo before branching — never touch a parent repo.
+// Decide how to handle git for apps/taskapp WITHOUT ever creating a nested repo:
+//  'own'    → apps/taskapp is its own repo (standalone use) → safe to branch.
+//  'parent' → it lives inside a parent repo (e.g. the example repo you pushed) → DON'T
+//             init or branch; just edit the working tree and capture a path-scoped diff.
+let repoMode = null;
 async function ensureRepo() {
+  if (repoMode) return repoMode;
   let top = '';
   try { top = (await exec('git', ['-C', APP, 'rev-parse', '--show-toplevel'])).stdout.trim(); } catch { /* no repo */ }
-  if (top === APP) return;
+  if (top && top !== APP) { repoMode = 'parent'; return repoMode; }   // inside a parent repo — never nest
+  if (top === APP) { repoMode = 'own'; return repoMode; }
+  // No git repo anywhere → create a dedicated one so branch isolation works standalone.
   await exec('git', ['-C', APP, 'init', '-b', 'main']).catch(() => {});
   await exec('git', ['-C', APP, 'add', '-A']).catch(() => {});
   await exec('git', ['-C', APP, '-c', 'user.email=pipeline@local', '-c', 'user.name=pipeline', 'commit', '-m', 'baseline'], { maxBuffer: 32 * 1024 * 1024 }).catch(() => {});
+  repoMode = 'own';
+  return repoMode;
 }
 
 async function runTests(cwd, label) {

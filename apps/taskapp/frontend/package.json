@@ -9,7 +9,9 @@
   "dependencies": {
     "@angular/common": "^18.2.0",
     "@angular/core": "^18.2.0",
+    "@angular/forms": "^18.2.0",
     "@angular/platform-browser": "^18.2.0",
+    "@angular/router": "^18.2.0",
     "rxjs": "^7.8.1"
   },
   "devDependencies": {
@@ -23,6 +25,9 @@
     "rootDir": "src",
     "moduleFileExtensions": ["ts", "js", "json"],
     "testRegex": ".*\\.spec\\.ts$",
+    "moduleNameMapper": {
+      "^@taskapp/shared-types$": "<rootDir>/../../../../libs/shared-types/src"
+    },
     "transform": {
       "^.+\\.ts$": ["ts-jest", { "tsconfig": { "module": "commonjs", "esModuleInterop": true, "experimentalDecorators": true, "useDefineForClassFields": false } }]
     }

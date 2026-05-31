@@ -1,0 +1,8 @@
+{
+  "name": "@taskapp/shared-types",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Request/response contracts shared by the NestJS backend and the Angular frontend (see .knowledge/CLAUDE.md).",
+  "types": "src/index.ts",
+  "main": "src/index.ts"
+}

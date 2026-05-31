@@ -7,7 +7,11 @@
     "useDefineForClassFields": false,
     "strict": true,
     "skipLibCheck": true,
-    "lib": ["ES2022", "DOM"]
+    "lib": ["ES2022", "DOM"],
+    "baseUrl": "./",
+    "paths": {
+      "@taskapp/shared-types": ["../../../libs/shared-types/src"]
+    }
   },
   "include": ["src/**/*.ts"]
 }
