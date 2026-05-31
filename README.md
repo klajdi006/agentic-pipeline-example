@@ -1,126 +1,166 @@
 # Agentic Engineering Pipeline — Reference Example
 
-A concrete, inspectable example of the system from the deck: a feature request flows
-through a chain of **specialized agents**, gated by **humans**, coordinated by a
-**deterministic control plane**, against a small **Angular + NestJS** task app.
+A runnable reference where a feature request flows through a chain of **specialized AI
+agents** — gated by **humans** at the moments that matter — coordinated by a
+**deterministic control plane**, against a real **Angular + NestJS** app.
 
-This folder is illustrative. The agents here are *simulated* (their outputs are
-hard-coded representative artifacts) so the whole pipeline runs offline with **zero
-dependencies and no API keys**. In production each agent step is a real Claude
-Agent SDK call with the scoped tools listed in its definition.
+It runs on your **local Claude Code** (no `ANTHROPIC_API_KEY` needed): each agent is a
+`claude -p` call. The agents really edit code, run tests, and open a Linear ticket.
+
+📊 **Overview presentation:** https://docs.google.com/presentation/d/1gq0n8EpFkg3qoHkcTDvq-pvFommCvJwpZpyPd7qh5nQ/edit?usp=sharing
+
+---
+
+## What it does
+
+You describe a feature in a sentence. Then:
+
+1. **Scout** reads the app and assesses impact
+2. **Spec writer** writes a structured spec → **creates a Linear ticket** → ✋ *you approve*
+3. **Planner** produces a file-level plan
+4. **Implementer** edits the code **full-stack** (NestJS + Angular) on a branch
+5. **Test author** writes Jest specs and runs `npm test` on **both stacks** — the real gate
+6. **PR agent** captures the real `git diff`; **Reviewer** checks it against your standards
+7. ✋ *you approve the PR* → **Merge/Deploy** → **Closer** moves the Linear ticket to Done
+
+A failing test or a blocking review routes back to the implementer **with the reason**, so
+the loop converges instead of retrying blind.
+
+---
+
+## Repository layout
 
 ```
 agentic-pipeline-example/
-├── README.md                 ← you are here
-├── package.json
+├── .env / .env.example       ← config: AGENTS, CLAUDE_MODEL, LINEAR_API_KEY (see below)
 ├── .knowledge/               ← the LIVING knowledge base every agent reads
-│   ├── CLAUDE.md             ← coding standards / conventions
-│   ├── skills/               ← reusable procedures
+│   ├── CLAUDE.md             ← coding standards (also the reviewer's rubric)
+│   ├── skills/               ← reusable procedures (add a NestJS module / Angular feature)
 │   └── decisions/            ← architecture decision records (ADRs)
-├── agents/                   ← one definition per agent (role, model, scoped tools, prompt)
-│   ├── 01-scout.md ... 10-closer-curator.md
-├── control-plane/            ← the deterministic orchestrator (runnable)
-│   ├── events.mjs            ← event vocabulary
-│   ├── state-machine.mjs     ← states, gates, transitions, retry policy
-│   └── orchestrator.mjs      ← the durable runner (in-memory simulation of Temporal)
+├── agents/                   ← 10 agent definitions: role, model, scoped tools, prompt
 ├── schemas/                  ← JSON Schemas for the structured handoffs between agents
-│   ├── spec.schema.json
-│   ├── plan.schema.json
-│   └── review-verdict.schema.json
-└── example/
-    ├── feature-request.md    ← the input: "add a deadline-based task scheduler"
-    ├── simulated-agents.mjs  ← stubbed agent outputs (swap for real Agent SDK calls)
-    ├── run.mjs               ← wires it together and runs the whole pipeline
-    └── artifacts/            ← every artifact the run produces lands here
+├── control-plane/
+│   ├── state-machine.mjs     ← states, gates, transitions, retry/failure routing
+│   ├── orchestrator.mjs      ← the runner (in-memory stand-in for Temporal)
+│   ├── events.mjs            ← event vocabulary
+│   ├── claude-cli.mjs        ← adapter: runs each agent via your local `claude -p`
+│   └── linear.mjs            ← Linear GraphQL client (create / comment / close)
+├── example/
+│   ├── feature-request.md    ← default input if you don't pass one
+│   ├── run.mjs               ← wires it together and runs the pipeline
+│   ├── agents.cli.mjs        ← LIVE agents (real claude + real edits + Linear)
+│   ├── simulated-agents.mjs  ← offline stubs (no claude, no network)
+│   └── artifacts/            ← every run writes its paper trail here
+├── libs/shared-types/        ← request/response contracts shared by FE + BE
+└── apps/taskapp/             ← THE PRODUCT the agents build into
+    ├── backend/              ← NestJS, in-memory store, Jest (runnable + tested)
+    └── frontend/             ← Angular v21 standalone workspace, ts-jest (runnable + tested)
 ```
+
+---
 
 ## Run it
 
+### Simulated — offline, zero setup
+
+Fast dry-run of the whole flow with canned outputs (no Claude, no network):
+
 ```bash
-cd agentic-pipeline-example
 node example/run.mjs
 ```
 
-You'll see the feature request walk through every state, the two human gates
-(auto-approved in the sim, clearly marked), a **deliberate CI failure on the first
-implementation attempt** that routes back and retries (demonstrating failure
-handling), and a final curator step that proposes a standards update. Afterwards,
-`example/artifacts/` contains the full paper trail:
+You'll see every state, the two human gates (auto-approved), a scripted "test fails →
+retry" loop, and a full artifact trail in `example/artifacts/`.
 
-```
-artifacts/
-├── 01-impact-assessment.md
-├── 02-TASK-142-ticket.md
-├── 03-plan.json
-├── 04-implementation-summary.md
-├── 05-tests-summary.md
-├── 06-PR-description.md
-├── 07-review-verdict.json
-├── 08-preview-e2e-report.md
-├── 09-release-report.md
-└── 10-standards-update.diff
-```
+### Live — your local Claude actually does the work
 
-## Run against your LOCAL Claude Code (no API key)
-
-If you have Claude Code installed and are logged in (`claude login`), you can run the
-reasoning/authoring agents for real — they call your local `claude` CLI and use your
-existing subscription. **No `ANTHROPIC_API_KEY` needed.**
+**Prerequisites:** Claude Code installed and logged in (`claude login`), and the app
+installed so the implement/test steps run for real:
 
 ```bash
-# AGENTS=live is set in .env (copy it from .env.example) — no command-line prefix needed.
-node --env-file=.env example/run.mjs "your feature request"
+cp .env.example .env                 # then put your Linear key in it (optional)
+cd apps/taskapp/backend  && npm install && cd -
+cd apps/taskapp/frontend && npm install && cd -
+
+node --env-file=.env example/run.mjs "add a due-date field to tasks"
 ```
 
-In live mode: **scout, spec-writer, planner, reviewer, and closer-curator** are real
-`claude -p` calls (with the `.knowledge/` base + their `agents/*.md` prompt as the system
-prompt, and structured JSON output where a schema applies). The
-infra-bound steps (**implement, test, PR, preview, deploy**) stay simulated because there's
-no real repo/CI mounted yet. The same injected CI failure still demonstrates retry routing,
-and the Reviewer's pass/block verdict is produced live.
+`AGENTS=live` lives in `.env`, so no command-line prefix is needed. The agents reason about
+your real app, edit `apps/taskapp`, run `npm test`, and (with a Linear key) open + close a
+real ticket.
 
-- Switch is one line: `run.mjs` dynamically imports `agents.cli.mjs` (live) vs
-  `simulated-agents.mjs` (default) based on the `AGENTS` env var.
-- Adapter: `control-plane/claude-cli.mjs` (`runClaude()` shells out to `claude -p`).
-- **Note:** using a personal subscription to power an automated backend is fine for this
-  local prototype, but production/multi-user use requires API-key billing (the Agent SDK
-  blocks subscription auth for exactly this reason).
+> A live run makes several `claude` calls and runs the test suites, so it takes a few
+> minutes and uses your subscription quota.
 
-### Make it FULLY live (real code edits + real ticket)
+---
 
-The repo includes a real product at **`apps/taskapp`** (runnable NestJS backend + Angular
-skeleton). Two optional steps upgrade the demo from "reasoning agents only" to end-to-end:
+## Configuration (`.env`)
+
+| Variable | What it does |
+|---|---|
+| `AGENTS=live` | Use the real agents (`agents.cli.mjs`). Remove/comment it to run simulated. |
+| `CLAUDE_MODEL` | Model passed to `claude --model …` (e.g. `claude-sonnet-4-6`). Unset = your Claude Code default. |
+| `LINEAR_API_KEY` | Free personal key → spec-writer creates a real ticket, closer marks it Done. Unset = that step no-ops. |
+| `LINEAR_TEAM_ID` | Optional. Defaults to your first Linear team. |
+
+`.env` is gitignored; `.env.example` is the template.
+
+---
+
+## The product: `apps/taskapp`
+
+A real, runnable app the agents extend. Run it independently any time:
 
 ```bash
-# 1) Install the backend so implement/test/PR run against real code:
-cd apps/taskapp/backend && npm install && cd -
+# backend — NestJS API on :3000 (CORS enabled for the dev frontend)
+cd apps/taskapp/backend && npm install && npm start
+cd apps/taskapp/backend && npm test          # Jest unit specs
 
-# 2) (optional) Create a real Linear ticket — free personal API key:
-#    linear.app → Settings → Security & access → Personal API keys
-export LINEAR_API_KEY=lin_api_xxxxxxxx
-
-# Then run live (AGENTS=live lives in .env, so no prefix needed):
-node --env-file=.env example/run.mjs "your feature request"
+# frontend — Angular v21 on :4200
+cd apps/taskapp/frontend && npm install && npm start    # → http://localhost:4200
+cd apps/taskapp/frontend && npm test          # ts-jest (pure logic)
 ```
 
-With the backend installed, the **implementer** edits `apps/taskapp/backend/src` on a feature
-branch via your local `claude` (Read/Edit/Write/Bash), the **test-author** adds Jest specs and
-**`npm test` is the real CI gate** — a red suite genuinely routes back to the implementer. The
-**pr-agent** captures the real `git diff`. With `LINEAR_API_KEY` set, the **spec-writer** opens
-the ticket and the **closer-curator** moves it to Done. Everything degrades gracefully: no
-backend `node_modules` → those steps stay simulated; no Linear key → the ticket step no-ops.
+The frontend's API base comes from `src/environments/` (`environment.development.ts` →
+`http://localhost:3000/api`; `environment.ts` → `/api` for production), swapped via
+`fileReplacements` in `angular.json`. Shared request/response types live in
+`libs/shared-types/` and are imported by both sides.
 
-> Heads up: a full live run invokes `claude` several times (and runs `npm test`), so it takes a
-> few minutes and consumes subscription usage.
+---
 
-## How to make it real
+## What's live vs simulated
 
-1. Replace each function in `example/simulated-agents.mjs` with an Agent SDK call that
-   loads the matching `agents/*.md` system prompt and the `.knowledge/` docs, and is
-   granted only the tools in that definition's allowlist.
-2. Swap the in-memory `orchestrator.mjs` for a durable engine (Temporal, or a DB +
-   queue) and drive transitions from real Linear/GitHub webhooks (`control-plane/events.mjs`).
-3. Point the gates at real humans (a Linear approval, a GitHub PR review).
+| Live (really happens) | Simulated (stubbed) |
+|---|---|
+| Scout / Spec / Plan / Review / Curate via local `claude` | Opening a GitHub PR (we capture the diff only) |
+| Implementer edits real backend + frontend code | Preview environment + E2E run |
+| `npm test` on both stacks — the gate | Merge + production deploy |
+| Spec-writer creates a Linear ticket; closer closes it | Human approvals (auto-approved in the demo) |
+| Real `git diff` + full artifact trail | |
 
-The control plane, schemas, state machine, and knowledge base are already the shapes
-you'd use in production — only the agent bodies are stubbed.
+The simulated items are the obvious build-out points for production.
+
+---
+
+## How it works (design notes for forking)
+
+- **Deterministic control plane.** `state-machine.mjs` owns the states, the two human gates,
+  and retry/failure routing; `orchestrator.mjs` walks it. Agents are stateless workers.
+- **Least privilege.** Each agent (`agents/NN-*.md`) declares a scoped tool allowlist — the
+  reviewer literally cannot merge.
+- **Structured handoffs.** Agents emit schema-validated JSON (`schemas/`), not chat, so a bad
+  handoff fails loudly instead of poisoning the next step.
+- **Living knowledge base.** Every agent's system prompt = `.knowledge/` (standards + skills +
+  ADRs) + its own definition. The reviewer gates against `CLAUDE.md`; the curator proposes
+  updates to it from review feedback.
+- **Graceful degradation.** No Linear key → ticket step no-ops. App not installed → implement/
+  test fall back to simulated. App inside a parent git repo → it edits in place without nesting
+  a repo. It always runs.
+
+### Make it production-grade
+
+- **Auth:** swap the local CLI for the Claude Agent SDK + API key (or Bedrock / Vertex).
+- **Back half:** add `gh pr create`, real preview envs + E2E, and prod deploy in place of the stubs.
+- **Durability:** replace the in-memory orchestrator with Temporal (or a DB + queue) driven by Linear/GitHub webhooks.
+- **Parallelism:** give each implement run its own git worktree.
+- **Your stack:** point `apps/taskapp` at your repo and rewrite the agent prompts + `.knowledge/` to your conventions.
