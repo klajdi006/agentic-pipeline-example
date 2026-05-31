@@ -1,0 +1,7 @@
+--- a/.knowledge/CLAUDE.md
++++ b/.knowledge/CLAUDE.md
+@@ Backend conventions
+ - Time is stored as UTC `timestamptz`. Never store local time.
++- Derived reminder/scheduling instants MUST be computed on the UTC instant, not by
++  offsetting a local Date. (Added after TASK-142: a local-time offset fired reminders
++  early for non-UTC users — caught by tests, see AC-1.)

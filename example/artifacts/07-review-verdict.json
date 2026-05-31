@@ -1,0 +1,23 @@
+{
+  "ticketKey": "TASK-142",
+  "verdict": "pass",
+  "findings": [
+    {
+      "severity": "minor",
+      "rule": "ADR-0001 single-instance sweep",
+      "file": "src/scheduler/scheduler.service.ts",
+      "message": "Add a DB advisory lock before we scale out (follow-up, not blocking)."
+    },
+    {
+      "severity": "info",
+      "rule": "CLAUDE.md UTC",
+      "file": "src/scheduler/scheduler.service.ts",
+      "message": "remindAt now computed on the UTC instant — correct."
+    }
+  ],
+  "coveredCriteria": [
+    "AC-1",
+    "AC-2",
+    "AC-3"
+  ]
+}

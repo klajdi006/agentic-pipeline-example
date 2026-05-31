@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "plan.schema.json",
+  "title": "ImplementationPlan",
+  "description": "Ordered, file-level plan the Planner emits; the contract the Implementer executes.",
+  "type": "object",
+  "required": ["ticketKey", "slices"],
+  "additionalProperties": false,
+  "properties": {
+    "ticketKey": { "type": "string", "pattern": "^TASK-[0-9]+$" },
+    "slices": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Independent slices that can run in parallel worktrees.",
+      "items": {
+        "type": "object",
+        "required": ["slice", "steps"],
+        "properties": {
+          "slice": { "enum": ["backend", "frontend", "shared"] },
+          "steps": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["order", "action", "files", "satisfies"],
+              "properties": {
+                "order": { "type": "integer", "minimum": 1 },
+                "action": { "type": "string" },
+                "files": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+                "layer": { "enum": ["controller", "service", "entity", "dto", "migration", "component", "api", "shared-type", "test"] },
+                "satisfies": { "type": "array", "items": { "type": "string", "pattern": "^AC-[0-9]+$" } }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

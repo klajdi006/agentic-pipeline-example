@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "review-verdict.schema.json",
+  "title": "ReviewVerdict",
+  "description": "Structured verdict the Reviewer emits. A 'block' routes the PR back to the Implementer.",
+  "type": "object",
+  "required": ["ticketKey", "verdict", "findings"],
+  "additionalProperties": false,
+  "properties": {
+    "ticketKey": { "type": "string", "pattern": "^TASK-[0-9]+$" },
+    "verdict": { "enum": ["pass", "block"] },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["severity", "rule", "file", "message"],
+        "properties": {
+          "severity": { "enum": ["info", "minor", "major", "blocker"] },
+          "rule": { "type": "string", "description": "Which CLAUDE.md / skill rule applies." },
+          "file": { "type": "string" },
+          "line": { "type": "integer" },
+          "message": { "type": "string" }
+        }
+      }
+    },
+    "coveredCriteria": { "type": "array", "items": { "type": "string", "pattern": "^AC-[0-9]+$" } }
+  }
+}

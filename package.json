@@ -1,0 +1,11 @@
+{
+  "name": "agentic-pipeline-example",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Reference example of an agentic engineering pipeline (Angular + NestJS task app).",
+  "scripts": {
+    "start": "node example/run.mjs",
+    "demo": "node example/run.mjs"
+  }
+}

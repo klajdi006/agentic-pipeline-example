@@ -1,0 +1,12 @@
+{
+  "name": "taskapp-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Angular standalone frontend — source skeleton (wire into an `ng` workspace to run).",
+  "dependencies": {
+    "@angular/common": "^18.2.0",
+    "@angular/core": "^18.2.0",
+    "@angular/platform-browser": "^18.2.0",
+    "rxjs": "^7.8.1"
+  }
+}

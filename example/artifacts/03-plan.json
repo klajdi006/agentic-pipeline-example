@@ -1,0 +1,83 @@
+{
+  "ticketKey": "TASK-142",
+  "slices": [
+    {
+      "slice": "backend",
+      "steps": [
+        {
+          "order": 1,
+          "action": "Add deadline+remindAt to Task entity",
+          "files": [
+            "src/tasks/entities/task.entity.ts"
+          ],
+          "layer": "entity",
+          "satisfies": [
+            "AC-1"
+          ]
+        },
+        {
+          "order": 2,
+          "action": "Generate migration",
+          "files": [
+            "src/migrations/AddTaskDeadline.ts"
+          ],
+          "layer": "migration",
+          "satisfies": [
+            "AC-1"
+          ]
+        },
+        {
+          "order": 3,
+          "action": "SchedulerService cron sweep (UTC)",
+          "files": [
+            "src/scheduler/scheduler.service.ts",
+            "src/scheduler/scheduler.module.ts"
+          ],
+          "layer": "service",
+          "satisfies": [
+            "AC-2"
+          ]
+        },
+        {
+          "order": 4,
+          "action": "GET /tasks/due-soon",
+          "files": [
+            "src/tasks/tasks.controller.ts",
+            "src/tasks/tasks.service.ts"
+          ],
+          "layer": "controller",
+          "satisfies": [
+            "AC-3"
+          ]
+        }
+      ]
+    },
+    {
+      "slice": "frontend",
+      "steps": [
+        {
+          "order": 1,
+          "action": "Deadline field on task form",
+          "files": [
+            "src/app/features/tasks/task-form.component.ts"
+          ],
+          "layer": "component",
+          "satisfies": [
+            "AC-1"
+          ]
+        },
+        {
+          "order": 2,
+          "action": "DueSoonComponent sorted by deadline",
+          "files": [
+            "src/app/features/tasks/due-soon.component.ts"
+          ],
+          "layer": "component",
+          "satisfies": [
+            "AC-3"
+          ]
+        }
+      ]
+    }
+  ]
+}
