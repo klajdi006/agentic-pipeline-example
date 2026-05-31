@@ -62,6 +62,7 @@ export async function runClaude({ prompt, agentPromptPath, allowedTools = [], sc
     "--permission-mode", permissionMode,
   ];
   if (allowedTools.length) args.push("--allowedTools", allowedTools.join(","));
+  if (process.env.CLAUDE_MODEL) args.push("--model", process.env.CLAUDE_MODEL); // e.g. claude-sonnet-4-6
 
   let stdout;
   try {

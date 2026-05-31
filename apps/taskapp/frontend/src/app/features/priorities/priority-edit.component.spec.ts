@@ -7,6 +7,10 @@ import { applyPriorityUpdate, validateUpdatePriority } from './priority.logic';
  * Runs ts-jest in a node env (no jsdom / TestBed — see frontend/package.json), so we verify
  * the edit flow through the framework-free helpers it mirrors (`validateUpdatePriority` and
  * `applyPriorityUpdate`) rather than by rendering the component.
+ *
+ * As in the create view, the template gates each error message behind an Angular v21
+ * `@if (control.touched && control.invalid)` block, so a non-empty error list below means
+ * that `@if` branch renders.
  */
 describe('PriorityEditComponent logic', () => {
   const existing: PriorityResponse = {

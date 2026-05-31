@@ -1,1 +1,1 @@
-I've stopped for your review — the proposed standards diff is above (and saved to the plan file). Let me know if you'd like me to adjust it, or whether the Curator should open this as the small follow-up PR for human approval.
+The proposed standards update is in the plan file and shown above — a single Definition-of-done line requiring lockfile regeneration on any `package.json` version bump, backed by the major review finding. The two info-level findings are environment limitations, not rules, so no further changes are proposed.
