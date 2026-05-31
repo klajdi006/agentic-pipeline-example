@@ -24,6 +24,11 @@
 - Target **Angular v21**.
 - Components are standalone and `OnPush` (`ChangeDetectionStrategy.OnPush` on every component).
 - State via `signal()` / `computed()`; no `BehaviorSubject` for new code.
+- **Separate files**: every component has its own `.ts` + `.html` (`templateUrl`) + optional `.css`/`.scss` (`styleUrl`). No inline `template`/`styles`.
+- Inputs/outputs use the signal APIs — `input()`, `input.required()`, `model()`, `output()` — and signal queries (`viewChild()`, `contentChild()`). Never the `@Input()`/`@Output()`/`@ViewChild` decorators.
+- DI via `inject()`, not constructor parameters.
+- Forms are strongly-typed reactive forms (`NonNullableFormBuilder`); no template-driven forms for non-trivial features.
+- Load async data with `httpResource()` / `resource()` / `toSignal()`; if you subscribe, use `takeUntilDestroyed()`.
 - Templates use the built-in control-flow blocks — `@if` / `@else`, `@for` (always with a
   `track` expression), `@switch`. Never use `*ngIf` / `*ngFor`, and don't import
   `CommonModule` for control flow.

@@ -4,8 +4,8 @@ The small Angular + NestJS app the agentic pipeline builds features into.
 
 - **`backend/`** — NestJS, **runnable + testable** (in-memory store, Jest). This is where the
   implementer/test agents do real work, and where `npm test` is the real CI gate.
-- **`frontend/`** — Angular standalone source skeleton (idiomatic files; wire into an `ng`
-  workspace to run a dev server). Pure logic is unit-tested with **ts-jest** (`npm test`),
+- **`frontend/`** — runnable Angular v21 standalone workspace. `npm install` then `npm start`
+  (`ng serve`) → http://localhost:4200. Pure logic is unit-tested with **ts-jest** (`npm test`),
   so the frontend has a real CI gate too — no browser/TestBed needed.
 
 ## Backend — the same tests the agents run

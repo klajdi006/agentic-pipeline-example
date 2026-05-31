@@ -6,6 +6,7 @@ import {
   PriorityResponse,
   UpdatePriorityRequest,
 } from '@taskapp/shared-types';
+import { environment } from '../../../environments/environment';
 
 /**
  * Typed access to the priorities API. Components consume this service rather than
@@ -14,7 +15,7 @@ import {
 @Injectable({ providedIn: 'root' })
 export class PrioritiesApiService {
   private readonly http = inject(HttpClient);
-  private readonly base = '/api/priorities';
+  private readonly base = `${environment.apiUrl}/priorities`;
 
   list(): Observable<PriorityResponse[]> {
     return this.http.get<PriorityResponse[]>(this.base);
