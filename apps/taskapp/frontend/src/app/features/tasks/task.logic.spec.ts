@@ -27,6 +27,7 @@ describe('task.logic (TASK-142 contract)', () => {
       completed: false,
       priority: 'medium',
       createdAt: '2026-05-31T10:00:00.000Z',
+      description: null,
     };
 
     it('recognises a freshly created task (id, title, completed=false, UTC ISO createdAt)', () => {
@@ -45,8 +46,8 @@ describe('task.logic (TASK-142 contract)', () => {
   // AC-2 — the list response: an array whose items all match the Task shape.
   describe('AC-2: list response shape', () => {
     const list: Task[] = [
-      { id: 'a', title: 'First', completed: false, priority: 'low', createdAt: '2026-05-31T10:00:00.000Z' },
-      { id: 'b', title: 'Second', completed: true, priority: 'high', createdAt: '2026-05-31T11:00:00.000Z' },
+      { id: 'a', title: 'First', completed: false, priority: 'low', createdAt: '2026-05-31T10:00:00.000Z', description: null },
+      { id: 'b', title: 'Second', completed: true, priority: 'high', createdAt: '2026-05-31T11:00:00.000Z', description: 'A detail' },
     ];
 
     it('accepts an array whose every item matches the Task shape', () => {
@@ -68,6 +69,7 @@ describe('task.logic (TASK-142 contract)', () => {
       completed: false,
       priority: 'medium',
       createdAt: '2026-05-31T10:00:00.000Z',
+      description: null,
     };
 
     it('returns a task with completed=true and preserves the other fields', () => {
@@ -83,8 +85,8 @@ describe('task.logic (TASK-142 contract)', () => {
   // AC-4 — deleting a task removes it locally; unknown ids are a no-op.
   describe('AC-4: remove by id', () => {
     const list: Task[] = [
-      { id: 'a', title: 'A', completed: false, priority: 'low', createdAt: '2026-05-31T10:00:00.000Z' },
-      { id: 'b', title: 'B', completed: false, priority: 'high', createdAt: '2026-05-31T11:00:00.000Z' },
+      { id: 'a', title: 'A', completed: false, priority: 'low', createdAt: '2026-05-31T10:00:00.000Z', description: null },
+      { id: 'b', title: 'B', completed: false, priority: 'high', createdAt: '2026-05-31T11:00:00.000Z', description: null },
     ];
 
     it('drops the matching id and keeps the rest', () => {
@@ -94,6 +96,37 @@ describe('task.logic (TASK-142 contract)', () => {
     it('is a no-op for an unknown id and never mutates the input', () => {
       expect(removeTaskById(list, 'zzz')).toEqual(list);
       expect(list.map((t) => t.id)).toEqual(['a', 'b']);
+    });
+  });
+
+  // TASK-142 AC-1/AC-2 — isTask() accepts the new description field.
+  describe('TASK-142 AC-1/AC-2: description field in isTask()', () => {
+    const base = {
+      id: 'x1',
+      title: 'Task',
+      completed: false,
+      priority: 'medium' as const,
+      createdAt: '2026-05-31T10:00:00.000Z',
+    };
+
+    it('AC-2: accepts a task with description: null', () => {
+      expect(isTask({ ...base, description: null })).toBe(true);
+    });
+
+    it('AC-1: accepts a task with a string description', () => {
+      expect(isTask({ ...base, description: 'Some extra detail' })).toBe(true);
+    });
+
+    it('rejects a task where description is absent (undefined)', () => {
+      expect(isTask({ ...base })).toBe(false);
+    });
+
+    it('rejects a task where description is a number', () => {
+      expect(isTask({ ...base, description: 42 })).toBe(false);
+    });
+
+    it('rejects a task where description is an object', () => {
+      expect(isTask({ ...base, description: {} })).toBe(false);
     });
   });
 
@@ -130,6 +163,7 @@ describe('sortTasksForExport (TASK-142 CSV export)', () => {
     priority: 'medium',
     completed: false,
     createdAt: '2024-01-01T00:00:00.000Z',
+    description: null,
     ...overrides,
   });
 

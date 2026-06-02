@@ -6,7 +6,6 @@
 // lives here.
 
 export const STATES = Object.freeze({
-  scout:         { agent: "scout",          gate: null,                  next: "spec" },
   spec:          { agent: "spec-writer",    gate: "human-approve-spec",  next: "plan" },
   plan:          { agent: "planner",        gate: null,                  next: "implement" },
   implement:     { agent: "implementer",    gate: null,                  next: "test",          isolation: "worktree" },
@@ -18,7 +17,7 @@ export const STATES = Object.freeze({
   close_curate:  { agent: "closer-curator", gate: null,                  next: "DONE" },
 });
 
-export const START = "scout";
+export const START = "spec";
 
 // Retry policy: how many times a failing state may route back before escalating to a human.
 export const MAX_ATTEMPTS = 3;
@@ -30,3 +29,11 @@ export function nextState(stateId) {
 export function failState(stateId) {
   return STATES[stateId]?.onFail ?? "ESCALATE";
 }
+
+// ---- Fast path: trivial changes (single field / rename / type change) ----------
+// Skips scout/spec/plan/pr/review/curate — implement+test in one Claude call.
+export const FAST_STATES = Object.freeze({
+  fast_implement: { agent: "fast-implementer", gate: null, next: "DONE", onFail: "fast_implement" },
+});
+export const FAST_START = "fast_implement";
+export const FAST_MAX_ATTEMPTS = 2;

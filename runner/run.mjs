@@ -10,7 +10,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { runPipeline } from "../control-plane/orchestrator.mjs";
-import { STATES } from "../control-plane/state-machine.mjs";
+import { STATES, FAST_STATES, FAST_START, FAST_MAX_ATTEMPTS } from "../control-plane/state-machine.mjs";
+import { classify } from "./classifier.mjs";
 import { drainUsage, killActive } from "../control-plane/claude-cli.mjs";
 import { createWorktree } from "../control-plane/worktree.mjs";
 import { makeAgents } from "./agents.cli.mjs";
@@ -179,14 +180,22 @@ async function approveGate(name) {
   return { approved: true, by: name === "human-approve-spec" ? "PM (auto-approved in demo)" : "Tech lead (auto-approved in demo)" };
 }
 
+const complexity = classify(request);
+const isFast = complexity === "trivial";
+
 console.log(c.b("\n🤖 Agentic Engineering Pipeline — live run"));
 console.log(c.dim("   Request: " + firstLine.slice(0, 80) + (firstLine.length > 80 ? "…" : "")));
 console.log(c.dim("   Run folder: runs/" + runId + "/"));
 const appReady = existsSync(join(ROOT, "apps/taskapp/backend/node_modules"));
-console.log(c.dim("   scout/spec/plan/review/curate call your local `claude`."));
-console.log(c.dim("   Linear: " + (process.env.LINEAR_API_KEY ? "enabled — a real ticket will be created/closed" : "disabled (set LINEAR_API_KEY to create a real ticket)")));
-console.log(c.dim("   App: " + (appReady ? "installed → implement/test/PR run live against apps/taskapp/backend" : "NOT installed → implement/test/PR will error (cd apps/taskapp/backend && npm install)")));
-console.log(c.dim("   states: " + Object.keys(STATES).join(" → ")));
+if (isFast) {
+  console.log(c.teal("   ⚡ Fast path") + c.dim(" — trivial change detected, skipping scout/spec/plan/pr/review/curate"));
+  console.log(c.dim("   states: fast_implement → DONE"));
+} else {
+  console.log(c.dim("   ◎ Full pipeline — spec/plan/implement/test/pr/review/curate call your local `claude`."));
+  console.log(c.dim("   Linear: " + (process.env.LINEAR_API_KEY ? "enabled — a real ticket will be created/closed" : "disabled (set LINEAR_API_KEY to create a real ticket)")));
+  console.log(c.dim("   states: " + Object.keys(STATES).join(" → ")));
+}
+console.log(c.dim("   App: " + (appReady ? "installed → implement/test run live against apps/taskapp/backend" : "NOT installed → implement/test will error (cd apps/taskapp/backend && npm install)")));
 
 const STATUS_BY_STATE = { DONE: "shipped", ESCALATE: "escalated", ROLLBACK: "rolled-back" };
 let exitCode = 0;
@@ -206,7 +215,14 @@ function gracefulStop() {
 process.on("SIGTERM", gracefulStop);
 process.on("SIGINT", gracefulStop);
 try {
-  ledger = await runPipeline({ ticketKey: process.env.TICKET_KEY || "TASK-142", request, agents, approveGate, log });
+  ledger = await runPipeline({
+    ticketKey: process.env.TICKET_KEY || "TASK-142",
+    request,
+    agents,
+    approveGate,
+    log,
+    ...(isFast ? { states: FAST_STATES, start: FAST_START, maxAttempts: FAST_MAX_ATTEMPTS } : {}),
+  });
   writeMeta({
     status: STATUS_BY_STATE[ledger.state] || "halted",
     finishedAt: new Date().toISOString(),

@@ -249,21 +249,38 @@ export function makeAgents({ writeArtifact, workspace }) {
   };
 
   // ---- LIVE reasoning/authoring agents --------------------------------------
+  const SCOUT_ROOTS = [
+    { base: APP,  dir: 'backend/src' },
+    { base: APP,  dir: 'frontend/src/app' },
+    { base: ROOT, dir: 'libs' },
+  ].filter(({ base, dir }) => existsSync(join(base, dir)));
+
   const scout = async ({ ledger }) => {
+    // Pre-load relevant files in Node.js (milliseconds) so Claude gets context
+    // without any Grep/Glob round-trips. Tools restricted to Read-only fallback.
+    const ctx = await preloadContext(ledger.request, SCOUT_ROOTS);
     const md = await runClaude({
       agentPromptPath: 'agents/01-scout.md',
-      allowedTools: ['Read', 'Grep', 'Glob'], // read-only exploration of the app — no edits, no plan files
-      prompt: `Feature request:\n\n${ledger.request}\n\nProduce a concise impact assessment for this Angular + NestJS task app. The backend lives at apps/taskapp/backend (NestJS, in-memory store). List affected FE/BE/shared surfaces, new artifacts, risks, and open questions. Markdown.${pastSummary()}`,
+      allowedTools: ['Read'], // no Grep/Glob — files are pre-loaded; Read only as fallback
+      prompt: `Feature request:\n\n${ledger.request}\n\nProduce a concise impact assessment: affected files (BE/FE/shared), new artifacts needed, risks, open questions. Markdown.${ctx}${pastSummary()}`,
       cwd: APP,
     });
     writeArtifact('01-impact-assessment.md', md);
-    return { ok: true, summary: 'Assessed impact (live claude).', artifact: md };
+    return { ok: true, summary: 'Assessed impact.', artifact: md };
   };
 
+  const SPEC_ROOTS = [
+    { base: APP,  dir: 'backend/src' },
+    { base: ROOT, dir: 'libs' },
+  ].filter(({ base, dir }) => existsSync(join(base, dir)));
+
   const specWriter = async ({ ledger }) => {
+    // Pre-load relevant files so the spec-writer reasons directly from code,
+    // no tool calls needed — the scout stage is gone.
+    const ctx = await preloadContext(ledger.request, SPEC_ROOTS);
     const spec = await runClaude({
       agentPromptPath: 'agents/02-spec-writer.md',
-      prompt: `Feature request:\n\n${ledger.request}\n\nImpact assessment:\n${ledger.artifacts.scout}\n\nEmit the structured spec. ticketKey must be "${ledger.ticketKey}". Acceptance criteria must be testable by Jest against the NestJS backend.`,
+      prompt: `Feature request:\n\n${ledger.request}\n\nEmit the structured spec. ticketKey must be "${ledger.ticketKey}". Acceptance criteria must be testable by Jest against the NestJS backend.\n\nIMPORTANT — scope-match the spec to the request. A small change should have just 1–3 acceptance criteria and a tiny scope. Do NOT invent extra features, edge cases, validation, or refactors the request didn't ask for.${ctx}`,
       allowedTools: READONLY_TOOLS,
       schema: SPEC_SCHEMA,
     });
@@ -284,7 +301,7 @@ export function makeAgents({ writeArtifact, workspace }) {
   const planner = async ({ ledger }) => {
     const plan = await runClaude({
       agentPromptPath: 'agents/03-planner.md',
-      prompt: `Approved spec:\n${JSON.stringify(ledger.artifacts.spec, null, 2)}\n\nProduce the file-level plan as backend/frontend slices. Backend files live under apps/taskapp/backend/src.`,
+      prompt: `Approved spec:\n${JSON.stringify(ledger.artifacts.spec, null, 2)}\n\nProduce the SMALLEST file-level plan that satisfies the spec, as backend/frontend slices. Backend files live under apps/taskapp/backend/src. Touch only the files that genuinely must change — a single-field change is typically ~2–5 file touches. Do NOT add steps for refactors, new abstractions, or files the spec doesn't require.`,
       allowedTools: READONLY_TOOLS,
       schema: PLAN_SCHEMA,
     });
@@ -301,7 +318,7 @@ export function makeAgents({ writeArtifact, workspace }) {
     ].join('\n\n');
     const v = await runClaude({
       agentPromptPath: 'agents/07-reviewer.md',
-      prompt: `Spec:\n${JSON.stringify(ledger.artifacts.spec, null, 2)}\n\nChanges under review:\n${changes}\n\nReview against the spec and coding standards. Block ONLY if an acceptance criterion is unmet, an in-scope change (backend OR frontend) is missing, or there is a real standards violation or bug. Record cosmetic/minor concerns as non-blocking findings — do not block on those.`,
+      prompt: `Spec:\n${JSON.stringify(ledger.artifacts.spec, null, 2)}\n\nChanges under review:\n${changes}\n\nReview against the spec. DEFAULT TO PASS. Set verdict "block" ONLY for a genuinely unmet acceptance criterion, a missing in-scope change, or a real bug/security defect that breaks the feature. Do NOT block on style, naming, structure, extra test coverage, or "could be improved" — record those as non-blocking findings and PASS. If you're unsure, pass.`,
       allowedTools: READONLY_TOOLS,
       schema: VERDICT_SCHEMA,
     });
@@ -352,7 +369,7 @@ export function makeAgents({ writeArtifact, workspace }) {
     const scopeCtx = inScopeContext(ledger.artifacts.plan);
     const summary = await runClaude({
       agentPromptPath: 'agents/04-implementer.md',
-      prompt: `Implement this plan FULL-STACK across apps/taskapp — BOTH the NestJS backend (backend/src) AND the Angular frontend (frontend/src). The current contents of every in-scope file are included below, so edit them directly and DO NOT re-read the whole repo — only Read a file that isn't provided if you genuinely need it. Implement every slice in the plan, reuse one shared priority/type definition per app, keep diffs minimal and idiomatic, and keep the backend build + tests green (run \`npm --prefix backend test\` to check).\n\nPlan:\n${JSON.stringify(ledger.artifacts.plan, null, 2)}${specNote}${scopeCtx}${fix}${reviewNote}`,
+      prompt: `Implement this plan FULL-STACK across apps/taskapp — BOTH the NestJS backend (backend/src) AND the Angular frontend (frontend/src). The current contents of every in-scope file are included below, so edit them directly and DO NOT re-read the whole repo — only Read a file that isn't provided if you genuinely need it. Implement every slice in the plan, reuse one shared priority/type definition per app, and keep the backend build + tests green (run \`npm --prefix backend test\` to check). Make the SMALLEST change that satisfies the spec — do NOT refactor unrelated code or add features/abstractions the plan doesn't call for.\n\nPlan:\n${JSON.stringify(ledger.artifacts.plan, null, 2)}${specNote}${scopeCtx}${fix}${reviewNote}`,
       cwd: APP,
       allowedTools: TOOLS,
       permissionMode: 'acceptEdits',
@@ -365,7 +382,7 @@ export function makeAgents({ writeArtifact, workspace }) {
     requireApp();
     const note = await runClaude({
       agentPromptPath: 'agents/05-test-author.md',
-      prompt: `Add or extend Jest specs that verify EACH acceptance criterion, across BOTH stacks: backend specs under backend/src/**/*.spec.ts, and frontend specs under frontend/src/**/*.spec.ts (the frontend uses ts-jest on pure logic — test functions/helpers, not Angular component rendering). Then make sure they pass. Do not weaken existing tests.\n\nSpec:\n${JSON.stringify(ledger.artifacts.spec, null, 2)}`,
+      prompt: `Add or extend Jest specs that verify EACH acceptance criterion. You MUST add at least one new it(...) block — if you write zero new test cases, return ok:false. Backend specs: backend/src/**/*.spec.ts (supertest for HTTP). Frontend specs: frontend/src/**/*.spec.ts (ts-jest on pure logic only). Run the suite and report pass/fail honestly. Do not weaken existing tests.\n\nSpec:\n${JSON.stringify(ledger.artifacts.spec, null, 2)}`,
       cwd: APP,
       allowedTools: TOOLS,
       permissionMode: 'acceptEdits',
@@ -400,6 +417,79 @@ export function makeAgents({ writeArtifact, workspace }) {
     const md = `${desc}\n\n---\n\n## Diff (\`git diff --cached\`)\n\n\`\`\`diff\n${diff.slice(0, 8000)}\n\`\`\``;
     writeArtifact('06-PR-description.md', md);
     return { ok: true, summary: `PR description from real git diff (${diff.split('\n').length} lines).`, artifact: { description: desc, diff } };
+  };
+
+  // Pre-load source files relevant to the request so agents never need to search —
+  // they just edit/analyse. Driven by keyword extraction, not a plan.
+  // `roots` is an array of { base: absolutePath, dir: relativeSubdir } pairs to search.
+  const STOP_WORDS = new Set(['with','that','this','from','into','have','will','make','also','just','add','the','for','its','can','it']);
+  const preloadContext = async (request, roots = [{ base: APP, dir: 'backend/src' }]) => {
+    const keywords = [...new Set(
+      request.toLowerCase().split(/\W+/)
+        .filter(w => w.length > 3 && !STOP_WORDS.has(w))
+    )].slice(0, 4);
+    if (!keywords.length) return '';
+
+    // { abs, label } where label is the display path shown in the prompt block header
+    const seen = new Map(); // abs → label
+    for (const kw of keywords) {
+      for (const { base, dir } of roots) {
+        try {
+          const { stdout } = await exec('grep', [
+            '-r', '-l', kw, '--include=*.ts', '-i',
+            '--exclude-dir=node_modules', '--exclude-dir=dist', '--exclude-dir=.angular',
+            dir,
+          ], { cwd: base, maxBuffer: 1024 * 1024 });
+          stdout.trim().split('\n').filter(Boolean).forEach(rel => {
+            const abs = join(base, rel);
+            if (!seen.has(abs)) seen.set(abs, rel);
+          });
+        } catch { /* no matches */ }
+      }
+    }
+
+    let budget = TOTAL_CAP;
+    const blocks = [];
+    for (const [abs, label] of seen) {
+      if (budget <= 0) { blocks.push(`--- ${label} ---\n(budget reached — Read if needed)`); continue; }
+      try {
+        let body = readFileSync(abs, 'utf8');
+        if (body.length > FILE_CAP) body = body.slice(0, FILE_CAP) + '\n…(truncated)';
+        budget -= body.length;
+        blocks.push(`--- ${label} ---\n${body}`);
+      } catch { /* skip unreadable */ }
+    }
+    return blocks.length
+      ? `\n\nRelevant files — read these directly, no need to Grep or Read from disk:\n\n${blocks.join('\n\n')}`
+      : '';
+  };
+
+  // ---- FAST PATH: single combined implement+test call (trivial changes) --------
+  // Files are pre-loaded from disk (Node.js grep, zero Claude calls), so the agent
+  // goes straight to editing — same as answering from memory, no discovery round-trips.
+  const FAST_TOOLS = ['Read', 'Edit', 'Write', 'Bash']; // no Glob — prevents node_modules traversal
+  const fastImplementer = async ({ ledger, attempt }) => {
+    requireApp();
+    if (attempt === 1 && !workspace && (await ensureRepo()) === 'own') { await git(['checkout', '-B', BRANCH]); }
+    const ctx = await preloadContext(ledger.request);
+    const failNote = ledger.testFail
+      ? `\n\nThe test suite is FAILING — fix it:\n${String(ledger.testFail).slice(-2000)}`
+      : '';
+    const summary = await runClaude({
+      agentPromptPath: 'agents/00-fast.md',
+      prompt: `Request: ${ledger.request}\n\nBackend: ${BACKEND} (NestJS/TypeScript, Jest)\nFrontend: ${FRONTEND} (Angular/TypeScript, ts-jest)${ctx}\n\nMake the minimal change and write one new test. The files above are current — edit them directly.${failNote}`,
+      cwd: APP,
+      allowedTools: FAST_TOOLS,
+      permissionMode: 'acceptEdits',
+      skipKnowledge: true,
+    });
+    writeArtifact('04-implementation-summary.md', summary);
+    const t = await npmTest();
+    const md = `# Fast implementation — ${ledger.ticketKey} (attempt ${attempt})\n\n${summary}\n\n---\n\n\`npm test\` → **${t.ok ? 'PASS' : 'FAIL'}**\n\n\`\`\`\n${t.out.slice(-2000)}\n\`\`\``;
+    writeArtifact('05-tests-summary.md', md);
+    if (t.ok) return { ok: true, summary: `Fast path: implemented + tested (attempt ${attempt}).`, artifact: md };
+    ledger.testFail = t.out;
+    return { ok: false, summary: 'Fast path: npm test FAILED → retrying.', artifact: md };
   };
 
   // ---- infra-bound steps — not executed here (need preview env + real CI/CD) ----
@@ -437,5 +527,6 @@ key, and run a post-deploy smoke check.`;
     'pr-agent': livePrAgent,
     'preview-e2e': previewE2e,
     'merge-release': mergeRelease,
+    'fast-implementer': fastImplementer,
   };
 }

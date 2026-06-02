@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { CreateTaskDto } from './dto/create-task.dto';
-import { Task, TaskPriority } from './task.model';
+import { Task, TaskPriority, TaskStatus } from './task.model';
 
 /** Sort weight for priority ordering: high first, then medium, then low. */
 const PRIORITY_RANK: Record<TaskPriority, number> = {
@@ -25,7 +25,11 @@ export class TasksService {
       title: dto.title,
       completed: false,
       priority: dto.priority ?? TaskPriority.medium,
+      status: TaskStatus.BACKLOG,
       createdAt: new Date().toISOString(),
+      description: dto.description ?? null,
+      deadline: dto.deadline ?? null,
+      assignee: dto.assignee ?? null,
     };
     this.tasks.set(task.id, task);
     return task;

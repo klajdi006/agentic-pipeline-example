@@ -1,7 +1,7 @@
 import { Task } from './task.model';
 
 const BOM = '﻿';
-const HEADER = 'id,title,priority,completed,createdAt';
+const HEADER = 'id,title,priority,completed,createdAt,description,deadline,assignee';
 
 function toCsvCell(value: string): string {
   const sanitized = /^[=+\-@]/.test(value) ? `'${value}` : value;
@@ -26,6 +26,9 @@ export function tasksToCsv(tasks: Task[]): string {
         toCsvCell(task.priority),
         String(task.completed),
         toCsvCell(task.createdAt),
+        toCsvCell(task.description ?? ''),
+        toCsvCell(task.deadline ?? ''),
+        toCsvCell(task.assignee ?? ''),
       ].join(','),
     );
   }

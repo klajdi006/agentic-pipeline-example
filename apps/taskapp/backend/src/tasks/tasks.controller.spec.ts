@@ -109,6 +109,58 @@ describe('TasksController (TASK-142 contract)', () => {
 
     expect(service.findAll().items).toHaveLength(0);
   });
+
+  it('status defaults to BACKLOG on create and is present on GET /tasks', () => {
+    const created = controller.create({ title: 'Status test' });
+
+    expect(created.status).toBe('BACKLOG');
+    const [found] = controller.findAll({ page: 1, limit: 20 }).items;
+    expect(found.status).toBe('BACKLOG');
+  });
+
+  // TASK-142 AC-1 — description is persisted when provided.
+  it('TASK-142 AC-1: persists the description when provided and returns it on GET /tasks', () => {
+    const created = controller.create({ title: 'Described task', description: 'Extra detail here' });
+
+    expect(created.description).toBe('Extra detail here');
+    const [found] = controller.findAll({ page: 1, limit: 20 }).items;
+    expect(found.description).toBe('Extra detail here');
+  });
+
+  // TASK-142 AC-2 — description is null when the field is omitted.
+  it('TASK-142 AC-2: description is null when the field is omitted', () => {
+    const created = controller.create({ title: 'No description' });
+
+    expect(created.description).toBeNull();
+    const [found] = controller.findAll({ page: 1, limit: 20 }).items;
+    expect(found.description).toBeNull();
+  });
+
+  // TASK-142 AC-2 — description is null even when explicitly passed as undefined.
+  it('TASK-142 AC-2: description is null when explicitly passed as undefined', () => {
+    const created = controller.create({ title: 'Explicit undef', description: undefined });
+    expect(created.description).toBeNull();
+  });
+
+  // TASK-142 AC-1 — MaxLength(2000) on description is enforced.
+  it('TASK-142 AC-1: rejects a description exceeding 2000 chars with 400', async () => {
+    await expect(
+      pipe.transform(
+        { title: 'ok', description: 'x'.repeat(2001) },
+        { type: 'body', metatype: CreateTaskDto },
+      ),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  // TASK-142 AC-1 — description at the 2000-char boundary is accepted.
+  it('TASK-142 AC-1: accepts a description at the 2000-char boundary', async () => {
+    await expect(
+      pipe.transform(
+        { title: 'ok', description: 'x'.repeat(2000) },
+        { type: 'body', metatype: CreateTaskDto },
+      ),
+    ).resolves.toMatchObject({ description: 'x'.repeat(2000) });
+  });
 });
 
 describe('GET /tasks/export (TASK-142 CSV export)', () => {
@@ -152,7 +204,7 @@ describe('GET /tasks/export (TASK-142 CSV export)', () => {
     const text = new TextDecoder('utf-8').decode(bytes); // strips BOM
     const lines = text.split('\n');
     expect(lines).toHaveLength(1);
-    expect(lines[0]).toBe('id,title,priority,completed,createdAt');
+    expect(lines[0]).toBe('id,title,priority,completed,createdAt,description');
   });
 
   it('Content-Type contains text/csv', async () => {
@@ -200,7 +252,7 @@ describe('GET /tasks/export (TASK-142 CSV export)', () => {
     it('data rows contain correct column values', async () => {
       const body = await (await fetch(exportUrl)).text(); // fetch strips BOM
       const lines = body.split('\n');
-      expect(lines[0]).toBe('id,title,priority,completed,createdAt');
+      expect(lines[0]).toBe('id,title,priority,completed,createdAt,description');
       // first data row (high priority sorts first)
       const [id, title, priority, completed, createdAt] = lines[1].split(',');
       expect(id).toBeTruthy();
@@ -214,6 +266,48 @@ describe('GET /tasks/export (TASK-142 CSV export)', () => {
       // If "export" were treated as an :id param, it would 404 (no task with id "export")
       const res = await fetch(exportUrl);
       expect(res.status).toBe(200);
+    });
+  });
+
+  describe('TASK-142 AC-3: description column values', () => {
+    afterEach(() => {
+      (tasksService as any).tasks.clear();
+    });
+
+    it('AC-3: description column contains the task description when provided', async () => {
+      await fetch(tasksUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: 'Has desc', priority: 'medium', description: 'My details' }),
+      });
+      const body = await (await fetch(exportUrl)).text();
+      const lines = body.split('\n');
+      expect(lines[0]).toBe('id,title,priority,completed,createdAt,description');
+      const descCell = lines[1].split(',')[5];
+      expect(descCell).toBe('My details');
+    });
+
+    it('AC-3: description column is empty when description is null', async () => {
+      await fetch(tasksUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: 'No desc', priority: 'medium' }),
+      });
+      const body = await (await fetch(exportUrl)).text();
+      const lines = body.split('\n');
+      const descCell = lines[1].split(',')[5];
+      expect(descCell).toBe('');
+    });
+
+    it('AC-3: description starting with an injection char is sanitised with a single quote', async () => {
+      await fetch(tasksUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: 'Safe', priority: 'medium', description: '=DANGEROUS' }),
+      });
+      const body = await (await fetch(exportUrl)).text();
+      const descCell = body.split('\n')[1].split(',')[5];
+      expect(descCell).toBe("'=DANGEROUS");
     });
   });
 
