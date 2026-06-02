@@ -93,6 +93,34 @@ describe('TasksService', () => {
     });
   });
 
+  describe('findAllForExport', () => {
+    it('returns empty array when store is empty', () => {
+      expect(service.findAllForExport()).toEqual([]);
+    });
+
+    it('returns all tasks sorted high → medium → low then createdAt ascending', () => {
+      service.create({ title: 'lo', priority: 'low' });
+      service.create({ title: 'hi', priority: 'high' });
+      service.create({ title: 'mid', priority: 'medium' });
+
+      const result = service.findAllForExport();
+      expect(result.map((t) => t.title)).toEqual(['hi', 'mid', 'lo']);
+    });
+
+    it('returns full unpaginated list regardless of task count', () => {
+      for (let i = 0; i < 25; i++) service.create({ title: `Task ${i}` });
+      expect(service.findAllForExport()).toHaveLength(25);
+    });
+
+    it('secondary sort by createdAt ascending for equal-priority tasks', () => {
+      const a = service.create({ title: 'first', priority: 'high' });
+      const b = service.create({ title: 'second', priority: 'high' });
+      const result = service.findAllForExport();
+      expect(result[0].id).toBe(a.id);
+      expect(result[1].id).toBe(b.id);
+    });
+  });
+
   describe('pagination', () => {
     it('returns page=1, limit=20 by default with correct total', () => {
       for (let i = 0; i < 5; i++) service.create({ title: `Task ${i}` });

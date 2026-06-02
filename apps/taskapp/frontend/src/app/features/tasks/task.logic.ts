@@ -1,4 +1,4 @@
-import { Task } from '../../shared/task.model';
+import { Task, TaskPriority } from '../../shared/task.model';
 
 /**
  * Framework-free tasks client logic — the single source of truth for the rules the
@@ -71,4 +71,18 @@ export function markCompleted(task: Task): Task {
  */
 export function removeTaskById(list: readonly Task[], id: string): Task[] {
   return list.filter((t) => t.id !== id);
+}
+
+const PRIORITY_RANK: Record<TaskPriority, number> = { high: 0, medium: 1, low: 2 };
+
+/**
+ * Returns a new array sorted by priority rank (high first) then createdAt ascending,
+ * mirroring the backend's findAllForExport() sort order (AC-9).
+ */
+export function sortTasksForExport(tasks: readonly Task[]): Task[] {
+  return [...tasks].sort(
+    (a, b) =>
+      PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority] ||
+      a.createdAt.localeCompare(b.createdAt),
+  );
 }

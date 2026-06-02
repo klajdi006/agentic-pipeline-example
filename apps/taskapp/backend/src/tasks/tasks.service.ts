@@ -53,6 +53,14 @@ export class TasksService {
     return { items: sorted.slice(offset, offset + limit), total, page, limit };
   }
 
+  findAllForExport(): Task[] {
+    return [...this.tasks.values()].sort(
+      (a, b) =>
+        PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority] ||
+        a.createdAt.localeCompare(b.createdAt),
+    );
+  }
+
   findOne(id: string): Task {
     const task = this.tasks.get(id);
     if (!task) throw new NotFoundException(`Task ${id} not found`);

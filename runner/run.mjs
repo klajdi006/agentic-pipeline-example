@@ -122,17 +122,26 @@ console.log(c.dim("   Linear: " + (process.env.LINEAR_API_KEY ? "enabled — a r
 console.log(c.dim("   App: " + (appReady ? "installed → implement/test/PR run live against apps/taskapp/backend" : "NOT installed → implement/test/PR will error (cd apps/taskapp/backend && npm install)")));
 console.log(c.dim("   states: " + Object.keys(STATES).join(" → ")));
 
-const ledger = await runPipeline({ ticketKey: "TASK-142", request, agents, approveGate, log });
-
-// Finalize this run's record and refresh the index.
 const STATUS_BY_STATE = { DONE: "shipped", ESCALATE: "escalated", ROLLBACK: "rolled-back" };
-writeMeta({
-  status: STATUS_BY_STATE[ledger.state] || "halted",
-  finishedAt: new Date().toISOString(),
-  ticket: ledger.linear?.identifier || ledger.ticketKey,
-  linearUrl: ledger.linear?.url || null,
-  agentRuns: ledger.history.length,
-});
-writeIndex(ROOT);
+let exitCode = 0;
+try {
+  const ledger = await runPipeline({ ticketKey: "TASK-142", request, agents, approveGate, log });
+  writeMeta({
+    status: STATUS_BY_STATE[ledger.state] || "halted",
+    finishedAt: new Date().toISOString(),
+    ticket: ledger.linear?.identifier || ledger.ticketKey,
+    linearUrl: ledger.linear?.url || null,
+    agentRuns: ledger.history.length,
+  });
+} catch (err) {
+  // An agent (or the orchestrator) threw — record the run as errored instead of leaving it
+  // dangling as "running", and keep whatever partial artifacts were written.
+  console.error(`\n${c.red("✗ Pipeline errored: " + (err?.message || err))}`);
+  writeMeta({ status: "error", finishedAt: new Date().toISOString(), error: String(err?.message || err) });
+  exitCode = 1;
+} finally {
+  writeIndex(ROOT); // always refresh the index, success or failure
+}
 
 console.log(c.dim(`\nThis run: runs/${runId}/  ·  all runs: runs/INDEX.md\n`));
+process.exitCode = exitCode; // set (don't process.exit) so stdout flushes to the web stream first

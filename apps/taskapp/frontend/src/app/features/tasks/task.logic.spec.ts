@@ -5,6 +5,7 @@ import {
   isUtcIso8601,
   markCompleted,
   removeTaskById,
+  sortTasksForExport,
   validateCreateTask,
 } from './task.logic';
 
@@ -119,5 +120,60 @@ describe('task.logic (TASK-142 contract)', () => {
       expect(validateCreateTask({ title: 'x'.repeat(TASK_TITLE_MAX_LENGTH) })).toEqual([]);
       expect(validateCreateTask({ title: 'x'.repeat(TASK_TITLE_MAX_LENGTH + 1) })).not.toEqual([]);
     });
+  });
+});
+
+describe('sortTasksForExport (TASK-142 CSV export)', () => {
+  const makeTask = (overrides: Partial<Task>): Task => ({
+    id: 'id',
+    title: 'title',
+    priority: 'medium',
+    completed: false,
+    createdAt: '2024-01-01T00:00:00.000Z',
+    ...overrides,
+  });
+
+  // AC-9: priority rank ordering
+  it('AC-9: orders tasks high → medium → low by priority rank', () => {
+    const tasks = [
+      makeTask({ id: '1', priority: 'low',    createdAt: '2024-01-01T00:00:00.000Z' }),
+      makeTask({ id: '2', priority: 'high',   createdAt: '2024-01-02T00:00:00.000Z' }),
+      makeTask({ id: '3', priority: 'medium', createdAt: '2024-01-03T00:00:00.000Z' }),
+    ];
+    const sorted = sortTasksForExport(tasks);
+    expect(sorted.map((t) => t.priority)).toEqual(['high', 'medium', 'low']);
+  });
+
+  // AC-9: secondary sort by createdAt ascending within the same priority
+  it('AC-9: secondary sort is createdAt ascending for equal-priority tasks', () => {
+    const tasks = [
+      makeTask({ id: 'b', priority: 'high', createdAt: '2024-01-02T00:00:00.000Z' }),
+      makeTask({ id: 'a', priority: 'high', createdAt: '2024-01-01T00:00:00.000Z' }),
+    ];
+    const sorted = sortTasksForExport(tasks);
+    expect(sorted[0].id).toBe('a');
+    expect(sorted[1].id).toBe('b');
+  });
+
+  // AC-9: all tasks included — no pagination cap
+  it('AC-9: returns all tasks regardless of count (no pagination cap)', () => {
+    const tasks = Array.from({ length: 25 }, (_, i) =>
+      makeTask({ id: String(i), title: `Task ${i}` }),
+    );
+    expect(sortTasksForExport(tasks)).toHaveLength(25);
+  });
+
+  it('returns an empty array when given an empty input', () => {
+    expect(sortTasksForExport([])).toEqual([]);
+  });
+
+  it('does not mutate the input array', () => {
+    const tasks = [
+      makeTask({ id: '2', priority: 'low',  createdAt: '2024-01-01T00:00:00.000Z' }),
+      makeTask({ id: '1', priority: 'high', createdAt: '2024-01-01T00:00:00.000Z' }),
+    ];
+    sortTasksForExport(tasks);
+    expect(tasks[0].priority).toBe('low');
+    expect(tasks[1].priority).toBe('high');
   });
 });

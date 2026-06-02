@@ -29,6 +29,7 @@ const STATUS_LABEL = {
   halted: "⛔ halted",
   escalated: "⚑ escalated",
   "rolled-back": "↩ rolled-back",
+  error: "💥 error",
   running: "⏳ running",
 };
 const label = (s) => STATUS_LABEL[s] || s || "?";
