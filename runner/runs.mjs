@@ -31,6 +31,7 @@ const STATUS_LABEL = {
   "rolled-back": "↩ rolled-back",
   error: "💥 error",
   running: "⏳ running",
+  stopped: "■ stopped",
 };
 const label = (s) => STATUS_LABEL[s] || s || "?";
 const cell = (s) => String(s ?? "").replace(/\|/g, "\\|").replace(/\n/g, " ");

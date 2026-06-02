@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 
 import { runPipeline } from "../control-plane/orchestrator.mjs";
 import { STATES } from "../control-plane/state-machine.mjs";
-import { drainUsage } from "../control-plane/claude-cli.mjs";
+import { drainUsage, killActive } from "../control-plane/claude-cli.mjs";
 import { createWorktree } from "../control-plane/worktree.mjs";
 import { makeAgents } from "./agents.cli.mjs";
 import { makeRunId, runDir, firstLine as firstLineOf, writeIndex } from "./runs.mjs";
@@ -182,6 +182,23 @@ console.log(c.dim("   states: " + Object.keys(STATES).join(" → ")));
 const STATUS_BY_STATE = { DONE: "shipped", ESCALATE: "escalated", ROLLBACK: "rolled-back" };
 let exitCode = 0;
 let ledger = null;
+
+// Graceful stop (SIGTERM from the server's stop button, or Ctrl-C): kill the in-flight
+// claude call, mark the run stopped, tear down the worktree, then exit.
+let stopping = false;
+async function gracefulStop() {
+  if (stopping) return;
+  stopping = true;
+  console.log(c.amber("\n■ stop requested — halting run and cleaning up…"));
+  killActive();
+  try { writeMeta({ status: "stopped", finishedAt: new Date().toISOString(), metrics, escalations: ledger?.escalations || [] }); } catch { /* best-effort */ }
+  try { writeMetricsArtifact(ledger); } catch { /* best-effort */ }
+  if (workspace && !process.env.KEEP_WORKTREE) { try { await workspace.cleanup(); } catch { /* best-effort */ } }
+  try { writeIndex(ROOT); } catch { /* best-effort */ }
+  process.exit(130);
+}
+process.on("SIGTERM", gracefulStop);
+process.on("SIGINT", gracefulStop);
 try {
   ledger = await runPipeline({ ticketKey: process.env.TICKET_KEY || "TASK-142", request, agents, approveGate, log });
   writeMeta({

@@ -7,7 +7,7 @@
 
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
-import { readFileSync, readdirSync, existsSync, mkdirSync, createWriteStream } from "node:fs";
+import { readFileSync, readdirSync, existsSync, mkdirSync, createWriteStream, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -22,6 +22,7 @@ const INDEX = join(__dir, "web", "index.html");
 const MAX_CONCURRENT = Number(process.env.MAX_CONCURRENT_RUNS) || 2;
 let active = 0;
 const queue = [];
+const children = new Map(); // runId → child process (for the stop endpoint)
 
 // Start queued runs until the cap is reached. A client that disconnected while waiting
 // is skipped (no slot consumed).
@@ -38,6 +39,10 @@ function startRun(request, res) {
   const runId = makeRunId(firstLine(request));
   const dir = runDir(__dir, runId);
   mkdirSync(dir, { recursive: true });
+  // Stub meta so the run shows up in the sidebar immediately (run.mjs overwrites it with
+  // the full record). Without this, an instant /api/runs refresh would find no meta yet.
+  writeFileSync(join(dir, "meta.json"),
+    JSON.stringify({ id: runId, request: firstLine(request), status: "running", startedAt: new Date().toISOString() }, null, 2));
   const logStream = createWriteStream(join(dir, "output.log"), { flags: "w" });
   res.write(`\x1b[2m::run ${runId}::\x1b[0m\n`); // surfaced to the client so it can link the run
 
@@ -45,12 +50,13 @@ function startRun(request, res) {
     cwd: __dir,
     env: { ...process.env, RUN_ID: runId },
   });
+  children.set(runId, child);
   const pipe = (d) => { res.write(d); logStream.write(d); };
   child.stdout.on("data", pipe);
   child.stderr.on("data", pipe);
 
   let released = false;
-  const release = () => { if (released) return; released = true; active--; pump(); };
+  const release = () => { if (released) return; released = true; children.delete(runId); active--; pump(); };
 
   child.on("error", (e) => { pipe(`\n\x1b[31m[failed to start runner: ${e.message}]\x1b[0m\n`); logStream.end(); res.end(); release(); });
   child.on("close", (code) => {
@@ -60,7 +66,8 @@ function startRun(request, res) {
     res.end();
     release();
   });
-  res.on("close", () => { if (child.exitCode === null) child.kill(); });
+  // Client disconnected (closed tab) — stop the run so it doesn't keep billing headless.
+  res.on("close", () => { if (child.exitCode === null) child.kill("SIGTERM"); });
 }
 
 const json = (res, obj, code = 200) => {
@@ -86,6 +93,14 @@ const server = createServer((req, res) => {
   // ---- run-history API ----
   if (req.method === "GET" && path === "/api/runs") {
     return json(res, listRuns(__dir));
+  }
+  // POST /api/runs/<id>/stop  → stop an in-flight run (SIGTERM → graceful cleanup in run.mjs)
+  let stopM = path.match(/^\/api\/runs\/([^/]+)\/stop$/);
+  if (req.method === "POST" && stopM) {
+    const id = safeSeg(decodeURIComponent(stopM[1]));
+    const child = id && children.get(id);
+    if (child && child.exitCode === null) { child.kill("SIGTERM"); return json(res, { stopped: true }); }
+    return json(res, { stopped: false, reason: "not running" }, 404);
   }
   // /api/runs/<id>/output  → the saved terminal output (ANSI)
   let m = path.match(/^\/api\/runs\/([^/]+)\/output$/);

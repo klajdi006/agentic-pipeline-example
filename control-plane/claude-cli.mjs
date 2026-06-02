@@ -79,6 +79,13 @@ export function drainUsage() {
   return _usageLog.splice(0, _usageLog.length);
 }
 
+// The currently-running `claude` child (at most one per run process, since the pipeline
+// awaits each agent). Lets a stop request kill the in-flight call so it stops billing.
+let _active = null;
+export function killActive() {
+  try { _active?.kill("SIGTERM"); } catch { /* already gone */ }
+}
+
 // Per-agent system prompt = knowledge base + that agent's own prompt (agents/*.md),
 // passed inline via --append-system-prompt (the `-file` variant isn't on every build).
 const sysCache = new Map();
@@ -129,6 +136,7 @@ export async function runClaude({ prompt, agentPromptPath, allowedTools = [], sc
 
   return await new Promise((resolve, reject) => {
     const child = spawn("claude", args, { cwd: cwd || ROOT });
+    _active = child;
     let buf = "", resultEnv = null, answer = "", stderr = "";
 
     child.on("error", (e) =>
@@ -148,6 +156,7 @@ export async function runClaude({ prompt, agentPromptPath, allowedTools = [], sc
     });
 
     child.on("close", (code) => {
+      if (_active === child) _active = null;
       if (buf.trim()) onEvent(buf); // trailing partial line, if any
       // Record + surface usage for this call (best-effort — never blocks the result).
       if (resultEnv) {
