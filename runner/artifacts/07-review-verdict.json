@@ -1,0 +1,42 @@
+{
+  "ticketKey": "TASK-142",
+  "verdict": "pass",
+  "findings": [
+    {
+      "severity": "major",
+      "rule": "FE testing: component tests with Testing Library",
+      "file": "apps/taskapp/frontend/src/app/features/tasks/task-list.component.spec.ts",
+      "message": "The spec file tests pure helper functions rather than the component via Testing Library or TestBed. Coding standards require 'FE: component tests with Testing Library.' The component's integration behaviour — httpResource() issuing HTTP, router navigation on goNext/goPrev, signal binding from URL params, and the loading state branch in the template — is not exercised at the component level. All acceptance criteria are still covered by the backend e2e and service unit tests, so this is non-blocking, but a proper component test harness (HttpTestingController + TestBed) should replace the pure-function mirror in a follow-up."
+    },
+    {
+      "severity": "minor",
+      "rule": "Shared-types contract matches spec definition",
+      "file": "libs/shared-types/src/task.contract.ts",
+      "message": "TaskResponse deviates from the spec-defined interface: it uses 'completed: boolean' instead of 'status: string', and omits 'description?: string', 'remindAt?: string', and 'updatedAt: string'. The deviation is pragmatic (matches the actual in-memory Task model), but the shared contract no longer matches the spec's stated shape. If the spec fields are intentional (e.g. for future scheduler/reminder work per ADR-0001), they should be tracked as a follow-up or the spec updated to reflect the current model."
+    },
+    {
+      "severity": "minor",
+      "rule": "AC-6/AC-7/AC-8: error body must reference the offending field",
+      "file": "apps/taskapp/backend/src/tasks/tasks.controller.e2e-spec.ts",
+      "message": "The e2e tests for AC-6 (limit=101), AC-7 (page=0), and AC-8 (limit=0) assert only on the 400 status code. The acceptance criteria additionally require that 'the error body references the limit/page field.' A follow-up assertion such as 'expect(body.message).toContain(\"limit\")' would fully satisfy each AC."
+    },
+    {
+      "severity": "info",
+      "rule": "Encapsulation: internal service URLs",
+      "file": "apps/taskapp/frontend/src/app/core/api/tasks.service.ts",
+      "message": "'baseUrl' was widened from private to public readonly so the component can pass it to httpResource(). This leaks an internal implementation detail as a public API surface. A cleaner alternative is to expose a typed method that returns the ResourceRequest object (url + params), keeping the URL private to the service."
+    }
+  ],
+  "coveredCriteria": [
+    "AC-1",
+    "AC-2",
+    "AC-3",
+    "AC-4",
+    "AC-5",
+    "AC-6",
+    "AC-7",
+    "AC-8",
+    "AC-9",
+    "AC-10"
+  ]
+}

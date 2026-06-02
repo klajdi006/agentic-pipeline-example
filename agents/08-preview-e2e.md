@@ -1,6 +1,5 @@
 ---
 name: preview-e2e
-model: claude-sonnet-4-6
 state: preview_e2e
 gate: human-approve-pr
 tools:

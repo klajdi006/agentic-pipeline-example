@@ -1,6 +1,5 @@
 ---
 name: scout
-model: claude-opus-4-8
 state: scout
 tools:
   allow: [repo.search, repo.read, mcp.linear.read]

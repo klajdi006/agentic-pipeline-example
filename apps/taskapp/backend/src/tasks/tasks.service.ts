@@ -32,11 +32,14 @@ export class TasksService {
   }
 
   /**
-   * Returns tasks ordered high → medium → low. Equal priorities keep their
-   * original insertion order (stable tiebreaker on the Map's insertion index).
+   * Returns tasks ordered high → medium → low, paginated. Equal priorities keep
+   * their original insertion order (stable tiebreaker on the Map's insertion index).
    */
-  findAll(): Task[] {
-    return [...this.tasks.values()]
+  findAll(
+    page = 1,
+    limit = 20,
+  ): { items: Task[]; total: number; page: number; limit: number } {
+    const sorted = [...this.tasks.values()]
       .map((task, index) => ({ task, index }))
       .sort(
         (a, b) =>
@@ -44,6 +47,10 @@ export class TasksService {
           a.index - b.index,
       )
       .map(({ task }) => task);
+
+    const total = sorted.length;
+    const offset = (page - 1) * limit;
+    return { items: sorted.slice(offset, offset + limit), total, page, limit };
   }
 
   findOne(id: string): Task {

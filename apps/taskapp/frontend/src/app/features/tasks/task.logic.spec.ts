@@ -24,6 +24,7 @@ describe('task.logic (TASK-142 contract)', () => {
       id: 'b3f1',
       title: 'Write the report',
       completed: false,
+      priority: 'medium',
       createdAt: '2026-05-31T10:00:00.000Z',
     };
 
@@ -43,8 +44,8 @@ describe('task.logic (TASK-142 contract)', () => {
   // AC-2 — the list response: an array whose items all match the Task shape.
   describe('AC-2: list response shape', () => {
     const list: Task[] = [
-      { id: 'a', title: 'First', completed: false, createdAt: '2026-05-31T10:00:00.000Z' },
-      { id: 'b', title: 'Second', completed: true, createdAt: '2026-05-31T11:00:00.000Z' },
+      { id: 'a', title: 'First', completed: false, priority: 'low', createdAt: '2026-05-31T10:00:00.000Z' },
+      { id: 'b', title: 'Second', completed: true, priority: 'high', createdAt: '2026-05-31T11:00:00.000Z' },
     ];
 
     it('accepts an array whose every item matches the Task shape', () => {
@@ -64,6 +65,7 @@ describe('task.logic (TASK-142 contract)', () => {
       id: '1',
       title: 'Complete me',
       completed: false,
+      priority: 'medium',
       createdAt: '2026-05-31T10:00:00.000Z',
     };
 
@@ -80,8 +82,8 @@ describe('task.logic (TASK-142 contract)', () => {
   // AC-4 — deleting a task removes it locally; unknown ids are a no-op.
   describe('AC-4: remove by id', () => {
     const list: Task[] = [
-      { id: 'a', title: 'A', completed: false, createdAt: '2026-05-31T10:00:00.000Z' },
-      { id: 'b', title: 'B', completed: false, createdAt: '2026-05-31T11:00:00.000Z' },
+      { id: 'a', title: 'A', completed: false, priority: 'low', createdAt: '2026-05-31T10:00:00.000Z' },
+      { id: 'b', title: 'B', completed: false, priority: 'high', createdAt: '2026-05-31T11:00:00.000Z' },
     ];
 
     it('drops the matching id and keeps the rest', () => {

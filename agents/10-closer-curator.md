@@ -1,6 +1,5 @@
 ---
 name: closer-curator
-model: claude-opus-4-8
 state: close_curate
 tools:
   allow: [mcp.linear.write, repo.read, repo.write, github.pr.create]

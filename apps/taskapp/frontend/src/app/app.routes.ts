@@ -2,6 +2,13 @@ import { Routes } from '@angular/router';
 
 export const routes: Routes = [
   {
+    path: 'tasks',
+    loadComponent: () =>
+      import('./features/tasks/task-list.component').then(
+        (m) => m.TaskListComponent,
+      ),
+  },
+  {
     path: 'priorities',
     loadComponent: () =>
       import('./features/priorities/priority-list.component').then(
@@ -22,5 +29,5 @@ export const routes: Routes = [
         (m) => m.PriorityEditComponent,
       ),
   },
-  { path: '', pathMatch: 'full', redirectTo: 'priorities' },
+  { path: '', pathMatch: 'full', redirectTo: 'tasks' },
 ];

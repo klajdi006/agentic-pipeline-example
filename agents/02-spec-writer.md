@@ -1,6 +1,5 @@
 ---
 name: spec-writer
-model: claude-opus-4-8
 state: spec
 gate: human-approve-spec
 tools:

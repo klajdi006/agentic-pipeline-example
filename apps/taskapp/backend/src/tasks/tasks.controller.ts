@@ -1,5 +1,6 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { CreateTaskDto } from './dto/create-task.dto';
+import { PaginationQueryDto } from './dto/pagination-query.dto';
 import { TasksService } from './tasks.service';
 
 @Controller('tasks')
@@ -12,8 +13,8 @@ export class TasksController {
   }
 
   @Get()
-  findAll() {
-    return this.tasks.findAll();
+  findAll(@Query() query: PaginationQueryDto) {
+    return this.tasks.findAll(query.page, query.limit);
   }
 
   @Get(':id')

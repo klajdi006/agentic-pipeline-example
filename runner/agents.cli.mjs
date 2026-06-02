@@ -213,6 +213,7 @@ export function makeAgents({ writeArtifact }) {
   const scout = async ({ ledger }) => {
     const md = await runClaude({
       agentPromptPath: 'agents/01-scout.md',
+      allowedTools: ['Read', 'Grep', 'Glob'], // read-only exploration of the app — no edits, no plan files
       prompt: `Feature request:\n\n${ledger.request}\n\nProduce a concise impact assessment for this Angular + NestJS task app. The backend lives at apps/taskapp/backend (NestJS, in-memory store). List affected FE/BE/shared surfaces, new artifacts, risks, and open questions. Markdown.${pastSummary()}`,
       cwd: APP,
     });

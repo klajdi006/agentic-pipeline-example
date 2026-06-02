@@ -1,6 +1,5 @@
 ---
 name: test-author
-model: claude-sonnet-4-6
 state: test
 tools:
   allow: [repo.read, repo.write, test.run]

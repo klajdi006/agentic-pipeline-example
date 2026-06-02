@@ -40,10 +40,12 @@ export function validateCreateTask(input: { title?: unknown }): string[] {
 export function isTask(value: unknown): value is Task {
   if (typeof value !== 'object' || value === null) return false;
   const t = value as Record<string, unknown>;
+  const validPriority = t['priority'] === 'low' || t['priority'] === 'medium' || t['priority'] === 'high';
   return (
     typeof t['id'] === 'string' &&
     typeof t['title'] === 'string' &&
     typeof t['completed'] === 'boolean' &&
+    validPriority &&
     typeof t['createdAt'] === 'string' &&
     isUtcIso8601(t['createdAt'])
   );

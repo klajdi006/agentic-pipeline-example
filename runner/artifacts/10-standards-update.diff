@@ -1,0 +1,32 @@
+Two findings from the review are generalizable:
+
+1. **Info (encapsulation)**: `baseUrl` was widened to `public readonly` so the component could pass it to `httpResource()`. The fix is a cross-cutting pattern: services should expose a typed `ResourceRequest` method, not leak internal URL fields.
+2. **Major (FE testing)**: The spec tested only extracted pure helpers instead of the component via `TestBed` + `HttpTestingController`. The existing rule ("component tests with Testing Library") doesn't say *what* must be exercised at the component level.
+
+Both are reusable rules, not one-offs. Here is the proposed diff:
+
+```diff
+--- a/.knowledge/CLAUDE.md
++++ b/.knowledge/CLAUDE.md
+@@ -31,6 +31,9 @@ git log
+-- Load async data with `httpResource()` / `resource()` / `toSignal()`; if you subscribe, use `takeUntilDestroyed()`.
++- Load async data with `httpResource()` / `resource()` / `toSignal()`; if you subscribe, use `takeUntilDestroyed()`.
++- When a component needs to call `httpResource()`, the `core/api/` service exposes a typed
++  method returning a `ResourceRequest` (`{ url, params }`) — never widen internal URL or
++  base-path fields to `public` just to hand them to the component.
+ - Templates use the built-in control-flow blocks — `@if` / `@else`, `@for` (always with a
+@@ -40,6 +43,9 @@ git log
+-- BE: Jest unit tests for services; e2e (`*.e2e-spec.ts`) for controllers via supertest.
+-- FE: component tests with Testing Library; Playwright for cross-cutting e2e.
++- BE: Jest unit tests for services; e2e (`*.e2e-spec.ts`) for controllers via supertest.
++  - e2e assertions on 4xx responses must check the error body (e.g. `expect(body.message).toContain('fieldName')`)
++    in addition to the status code — status alone does not verify the acceptance criterion.
++- FE: component tests with `TestBed` + `HttpTestingController` (or Testing Library on top of
++  `TestBed`) that exercise the component's integration behaviour: HTTP calls, signal/input
++  bindings from route params, and template branches (loading / error / empty / populated).
++  Do **not** only test pure helper functions extracted from the component file — that leaves
++  the component's wiring untested. Playwright for cross-cutting e2e.
+ - Every PR must keep coverage ≥ 80% on changed files and add tests for new behavior.
+```
+
+The other two findings (shared-types contract shape, specific AC assertion wording) are project-specific follow-ups rather than general rules, so they don't warrant a standards change.

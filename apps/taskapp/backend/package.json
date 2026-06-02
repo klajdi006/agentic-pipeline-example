@@ -30,6 +30,6 @@
     "testEnvironment": "node",
     "moduleFileExtensions": ["ts", "js", "json"],
     "rootDir": "src",
-    "testRegex": ".*\\.spec\\.ts$"
+    "testRegex": ".*\\.(spec|e2e-spec)\\.ts$"
   }
 }

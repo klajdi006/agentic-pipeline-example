@@ -45,19 +45,20 @@ describe('TasksController (TASK-142 contract)', () => {
     // createdAt round-trips as a UTC ISO-8601 string (no local-time storage).
     expect(created.createdAt).toBe(new Date(created.createdAt).toISOString());
     // Persisted through the store.
-    expect(controller.findAll()).toHaveLength(1);
+    expect(controller.findAll({ page: 1, limit: 20 }).items).toHaveLength(1);
   });
 
-  // AC-2 — GET /tasks lists tasks (200) as an array of the documented Task shape.
-  it('AC-2: lists tasks as an array matching the Task shape (id, title, completed, UTC ISO createdAt)', () => {
+  // AC-2 — GET /tasks lists tasks (200) as a paginated response with an items array.
+  it('AC-2: lists tasks as a paginated response matching the Task shape (id, title, completed, UTC ISO createdAt)', () => {
     controller.create({ title: 'First' });
     controller.create({ title: 'Second' });
 
-    const all = controller.findAll();
+    const result = controller.findAll({ page: 1, limit: 20 });
 
-    expect(Array.isArray(all)).toBe(true);
-    expect(all).toHaveLength(2);
-    for (const task of all) {
+    expect(Array.isArray(result.items)).toBe(true);
+    expect(result.items).toHaveLength(2);
+    expect(result.total).toBe(2);
+    for (const task of result.items) {
       expect(task).toMatchObject({
         id: expect.any(String),
         title: expect.any(String),
@@ -95,7 +96,7 @@ describe('TasksController (TASK-142 contract)', () => {
     ).rejects.toThrow(BadRequestException);
 
     // The pipe runs before the handler, so the store is never touched.
-    expect(controller.findAll()).toHaveLength(0);
+    expect(controller.findAll({ page: 1, limit: 20 }).items).toHaveLength(0);
   });
 
   it('AC-5: rejects a missing title with 400 and does not create a task', async () => {
@@ -103,6 +104,6 @@ describe('TasksController (TASK-142 contract)', () => {
       pipe.transform({}, { type: 'body', metatype: CreateTaskDto }),
     ).rejects.toThrow(BadRequestException);
 
-    expect(service.findAll()).toHaveLength(0);
+    expect(service.findAll().items).toHaveLength(0);
   });
 });

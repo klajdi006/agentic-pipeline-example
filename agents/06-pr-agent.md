@@ -1,6 +1,5 @@
 ---
 name: pr-agent
-model: claude-sonnet-4-6
 state: pr
 tools:
   allow: [repo.read, github.pr.create, mcp.linear.read]

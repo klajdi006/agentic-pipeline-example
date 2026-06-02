@@ -1,6 +1,5 @@
 ---
 name: reviewer
-model: claude-opus-4-8
 state: review
 tools:
   allow: [repo.read, github.pr.read, github.pr.comment]

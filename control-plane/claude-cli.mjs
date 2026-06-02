@@ -57,10 +57,14 @@ function systemPrompt(agentPromptPath) {
  * @param {string[]} [o.allowedTools]   - least-privilege tool allowlist (e.g. ["Read","Edit","Bash"])
  * @param {object}   [o.schema]         - JSON Schema → forces structured output, returns a parsed object
  * @param {string}   [o.cwd]            - working dir (a git worktree for implementers); defaults to repo root
- * @param {string}   [o.permissionMode] - "plan" (read-only), "acceptEdits", "bypassPermissions", ...
+ * @param {string}   [o.permissionMode] - "default", "acceptEdits", "bypassPermissions", "plan".
+ *                                         NOTE: avoid "plan" for agents that must return data —
+ *                                         in plan mode Claude presents a plan instead of answering,
+ *                                         yielding an empty result. Constrain read-only agents with
+ *                                         `allowedTools` (e.g. ["Read","Grep","Glob"]) instead.
  * @returns {Promise<string|object>} raw text, or the parsed object when `schema` is given
  */
-export async function runClaude({ prompt, agentPromptPath, allowedTools = [], schema, cwd, permissionMode = "plan" }) {
+export async function runClaude({ prompt, agentPromptPath, allowedTools = [], schema, cwd, permissionMode = "default" }) {
   // Ask for strict JSON in the prompt — more reliable across CLI versions than --json-schema,
   // which returned malformed output (e.g. `{ title }`) on some builds.
   const finalPrompt = schema
@@ -106,7 +110,7 @@ export async function runClaude({ prompt, agentPromptPath, allowedTools = [], sc
       if (buf.trim()) onEvent(buf); // trailing partial line, if any
       if (resultEnv?.is_error) return reject(new Error(`claude returned an error: ${resultEnv.result ?? ""}`));
       const result = resultEnv?.result ?? answer;
-      if (!result && code !== 0) return reject(new Error(`claude CLI failed (exit ${code}):\n${stderr || "no output"}`));
+      if (!result) return reject(new Error(`claude returned an empty result (exit ${code}). This often means the agent ran in "plan" permission mode and presented a plan instead of answering.${stderr ? "\n" + stderr : ""}`));
       try {
         if (!schema) return resolve(typeof result === "string" ? result : JSON.stringify(result, null, 2));
         return resolve(coerceJson(result));
