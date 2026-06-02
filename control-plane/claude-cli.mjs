@@ -6,14 +6,25 @@
 // headless CLI in normal mode uses your interactive login, so it's the right tool
 // for a LOCAL prototype. (For production / multi-user, move to API-key billing.)
 
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { spawn } from "node:child_process";
 import { readFileSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const exec = promisify(execFile);
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), ".."); // project root
+
+// Minimal ANSI palette (matches runner/run.mjs) for the live progress lines.
+const c = {
+  dim: (s) => `\x1b[2m${s}\x1b[0m`,
+  teal: (s) => `\x1b[36m${s}\x1b[0m`,
+  amber: (s) => `\x1b[33m${s}\x1b[0m`,
+};
+const trunc = (s, n) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
+// One-line summary of a tool call, e.g. Read(src/app.module.ts) or Bash(npm test).
+function toolBrief(name, input = {}) {
+  const v = input.file_path || input.path || input.command || input.pattern || input.query || input.url || input.prompt;
+  return v ? `${name}(${trunc(String(v).replace(/\s+/g, " ").trim(), 80)})` : name;
+}
 
 // --- The living knowledge base, loaded once and reused by every agent. ---------
 // Claude Code handles prompt caching for this large, stable prefix automatically.
@@ -55,31 +66,75 @@ export async function runClaude({ prompt, agentPromptPath, allowedTools = [], sc
   const finalPrompt = schema
     ? `${prompt}\n\nIMPORTANT: Respond with ONLY a single valid JSON object and nothing else — no markdown fences, no commentary. Use double-quoted keys and string values. It must conform to this JSON Schema:\n${JSON.stringify(schema)}`
     : prompt;
+  // Stream the agent's work live (tool calls + narration) instead of waiting for the whole
+  // turn. We read the CLI's NDJSON event stream — `stream-json` requires `--verbose` in -p mode.
   const args = [
     "-p", finalPrompt,
-    "--output-format", "json",
+    "--output-format", "stream-json",
+    "--verbose",
     "--append-system-prompt", systemPrompt(agentPromptPath),
     "--permission-mode", permissionMode,
   ];
   if (allowedTools.length) args.push("--allowedTools", allowedTools.join(","));
   if (process.env.CLAUDE_MODEL) args.push("--model", process.env.CLAUDE_MODEL); // e.g. claude-sonnet-4-6
 
-  let stdout;
-  try {
-    ({ stdout } = await exec("claude", args, { cwd: cwd || ROOT, maxBuffer: 64 * 1024 * 1024 }));
-  } catch (e) {
-    if (e.code === "ENOENT") {
-      throw new Error("`claude` CLI not found on PATH. Install Claude Code and run `claude login` first.");
-    }
-    throw new Error(`claude CLI failed:\n${e.stderr || e.message}`);
-  }
+  // Progress lines are indented to sit under the runner's "▶ state" header.
+  const say = (line) => process.stdout.write("        " + line + "\n");
+  say(c.dim("⋯ claude working…"));
 
-  let env;
-  try { env = JSON.parse(stdout); } catch { return stdout.trim(); } // some versions print raw text
-  if (env.is_error) throw new Error(`claude returned an error: ${env.result ?? stdout}`);
-  const result = env.result ?? "";
-  if (!schema) return typeof result === "string" ? result : JSON.stringify(result, null, 2);
-  return coerceJson(result);
+  return await new Promise((resolve, reject) => {
+    const child = spawn("claude", args, { cwd: cwd || ROOT });
+    let buf = "", resultEnv = null, answer = "", stderr = "";
+
+    child.on("error", (e) =>
+      reject(e.code === "ENOENT"
+        ? new Error("`claude` CLI not found on PATH. Install Claude Code and run `claude login` first.")
+        : e));
+    child.stderr.on("data", (d) => { stderr += d.toString(); });
+
+    child.stdout.on("data", (chunk) => {
+      buf += chunk.toString();
+      let nl;
+      while ((nl = buf.indexOf("\n")) !== -1) {
+        const line = buf.slice(0, nl);
+        buf = buf.slice(nl + 1);
+        onEvent(line);
+      }
+    });
+
+    child.on("close", (code) => {
+      if (buf.trim()) onEvent(buf); // trailing partial line, if any
+      if (resultEnv?.is_error) return reject(new Error(`claude returned an error: ${resultEnv.result ?? ""}`));
+      const result = resultEnv?.result ?? answer;
+      if (!result && code !== 0) return reject(new Error(`claude CLI failed (exit ${code}):\n${stderr || "no output"}`));
+      try {
+        if (!schema) return resolve(typeof result === "string" ? result : JSON.stringify(result, null, 2));
+        return resolve(coerceJson(result));
+      } catch (e) { reject(e); }
+    });
+
+    // Translate one NDJSON event into live progress + accumulate the final answer.
+    function onEvent(line) {
+      const s = line.trim();
+      if (!s) return;
+      let ev; try { ev = JSON.parse(s); } catch { return; }
+      if (ev.type === "result") { resultEnv = ev; return; }
+      if (ev.type !== "assistant" || !ev.message?.content) return;
+      for (const block of ev.message.content) {
+        if (block.type === "tool_use") {
+          say(c.teal("→ ") + c.dim(toolBrief(block.name, block.input)));
+        } else if (block.type === "text" && block.text?.trim()) {
+          answer += (answer ? "\n" : "") + block.text;
+          // Preview narration for free-text agents; skip for schema agents (the text is raw JSON).
+          if (!schema) {
+            for (const l of block.text.trim().split("\n").filter((x) => x.trim()).slice(0, 2)) {
+              say(c.dim("✎ " + trunc(l.trim(), 100)));
+            }
+          }
+        }
+      }
+    }
+  });
 }
 
 // Structured agents should return JSON. Be tolerant of versions that wrap it in prose or fences.

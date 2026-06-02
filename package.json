@@ -5,7 +5,8 @@
   "type": "module",
   "description": "Reference example of an agentic engineering pipeline (Angular + NestJS task app).",
   "scripts": {
-    "start": "node example/run.mjs",
-    "demo": "node example/run.mjs"
+    "start": "node runner/run.mjs",
+    "demo": "node runner/run.mjs",
+    "web": "node server.mjs"
   }
 }

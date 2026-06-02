@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Agentic Pipeline</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0b0f17;
+    --panel: #111827;
+    --panel-2: #0e1420;
+    --border: #1f2937;
+    --border-2: #2b3648;
+    --text: #e5e7eb;
+    --muted: #8b95a5;
+    --accent: #2563eb;
+    --max: 820px;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    font: 14px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ---- header ---- */
+  header {
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: none;
+  }
+  header h1 { font-size: 14px; font-weight: 600; margin: 0; }
+  header .tag {
+    font-size: 11px; color: #34d399; border: 1px solid #14532d; background: #052e1b;
+    padding: 1px 8px; border-radius: 999px; font-weight: 600; letter-spacing: .02em;
+  }
+
+  /* ---- transcript ---- */
+  #chat { flex: 1; overflow-y: auto; }
+  #messages { max-width: var(--max); margin: 0 auto; padding: 24px 18px 8px; display: flex; flex-direction: column; gap: 18px; }
+
+  .empty { color: var(--muted); text-align: center; margin: 12vh auto 0; max-width: 460px; }
+  .empty .big { font-size: 26px; margin-bottom: 8px; }
+  .empty code { background: var(--panel); padding: 1px 6px; border-radius: 5px; border: 1px solid var(--border); }
+
+  /* user request bubble (right-aligned, chat style) */
+  .user { align-self: flex-end; max-width: 88%; background: var(--accent); color: #fff;
+          padding: 9px 13px; border-radius: 14px 14px 4px 14px; white-space: pre-wrap; word-break: break-word; }
+
+  /* assistant "terminal" card */
+  .run { align-self: stretch; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--panel-2); }
+  .run-head {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 12px; border-bottom: 1px solid var(--border);
+    background: var(--panel); font-size: 12px; color: var(--muted);
+  }
+  .run-head .dot { width: 8px; height: 8px; border-radius: 50%; background: #6b7280; flex: none; }
+  .run-head.running .dot { background: #fbbf24; animation: pulse 1s ease-in-out infinite; }
+  .run-head.ok .dot { background: #4ade80; }
+  .run-head.err .dot { background: #f87171; }
+  @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
+  .run-head .label { font-weight: 600; color: #cbd5e1; }
+  .run-head .status { margin-left: auto; }
+  .term {
+    margin: 0; padding: 14px 16px; max-height: 60vh; overflow: auto;
+    white-space: pre-wrap; word-break: break-word;
+    font: 12.5px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+
+  /* ANSI colour classes — mirror the runner's palette in runner/run.mjs */
+  .b { font-weight: 700; } .dim { opacity: .55; }
+  .red { color: #f87171; } .green { color: #4ade80; } .amber { color: #fbbf24; }
+  .blue { color: #60a5fa; } .purple { color: #c084fc; } .teal { color: #2dd4bf; }
+
+  /* ---- composer (pinned bottom) ---- */
+  footer { flex: none; border-top: 1px solid var(--border); background: linear-gradient(transparent, var(--bg) 24px); }
+  .composer { max-width: var(--max); margin: 0 auto; padding: 14px 18px 6px; }
+  .box {
+    display: flex; align-items: flex-end; gap: 8px;
+    background: var(--panel); border: 1px solid var(--border-2); border-radius: 16px; padding: 8px 8px 8px 14px;
+  }
+  .box:focus-within { border-color: #3b4d6b; }
+  #request {
+    flex: 1; resize: none; border: 0; outline: 0; background: transparent; color: var(--text);
+    font: inherit; max-height: 200px; padding: 6px 0; line-height: 1.5;
+  }
+  #send {
+    flex: none; width: 34px; height: 34px; border-radius: 10px; border: 0; cursor: pointer;
+    background: var(--accent); color: #fff; font-size: 16px; line-height: 1; display: grid; place-items: center;
+  }
+  #send:disabled { opacity: .4; cursor: default; }
+  #send.stop { background: #dc2626; }
+  .hint { text-align: center; color: var(--muted); font-size: 11px; padding: 6px 18px 10px; }
+  .hint code { background: var(--panel); padding: 0 5px; border-radius: 4px; border: 1px solid var(--border); }
+</style>
+</head>
+<body>
+  <header>
+    <span>🤖</span>
+    <h1>Agentic Pipeline</h1>
+    <span class="tag">LIVE</span>
+  </header>
+
+  <main id="chat">
+    <div id="messages">
+      <div class="empty" id="empty">
+        <div class="big">🤖</div>
+        Describe a feature to build into <code>apps/taskapp</code>.<br>
+        The pipeline runs live — you'll see every state stream in below.
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    <form class="composer" id="composer">
+      <div class="box">
+        <textarea id="request" rows="1" placeholder="Describe the feature… (e.g. “Add a CSV export endpoint for tasks”)"></textarea>
+        <button id="send" type="submit" title="Run">↑</button>
+      </div>
+    </form>
+    <div class="hint">Enter to run · Shift+Enter for newline · each successful run saves its plan to <code>history/</code></div>
+  </footer>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const chat = $("#chat");
+const messages = $("#messages");
+const input = $("#request");
+const sendBtn = $("#send");
+let controller = null; // non-null while a run is in flight
+
+// Convert the runner's ANSI escape codes into coloured <span>s.
+const ANSI = { 1:"b", 2:"dim", 31:"red", 32:"green", 33:"amber", 34:"blue", 35:"purple", 36:"teal" };
+function ansiToHtml(text) {
+  const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const re = /\x1b\[([0-9;]*)m/g;
+  let out = "", last = 0, m, classes = [];
+  while ((m = re.exec(text))) {
+    out += '<span class="' + classes.join(" ") + '">' + esc(text.slice(last, m.index)) + "</span>";
+    const codes = m[1].split(";").filter(Boolean).map(Number);
+    if (codes.length === 0 || codes.includes(0)) classes = [];
+    for (const code of codes) if (ANSI[code]) classes.push(ANSI[code]);
+    last = re.lastIndex;
+  }
+  out += '<span class="' + classes.join(" ") + '">' + esc(text.slice(last)) + "</span>";
+  return out;
+}
+
+function autosize() {
+  input.style.height = "auto";
+  input.style.height = Math.min(input.scrollHeight, 200) + "px";
+}
+function atBottom() { return chat.scrollTop + chat.clientHeight >= chat.scrollHeight - 60; }
+function scrollDown() { chat.scrollTop = chat.scrollHeight; }
+function setRunning(on) {
+  sendBtn.classList.toggle("stop", on);
+  sendBtn.textContent = on ? "■" : "↑";
+  sendBtn.title = on ? "Stop" : "Run";
+}
+
+// Build a request bubble + an assistant terminal card; return the card's pieces.
+function addExchange(requestText) {
+  $("#empty")?.remove();
+
+  const user = document.createElement("div");
+  user.className = "user";
+  user.textContent = requestText;
+  messages.appendChild(user);
+
+  const run = document.createElement("div");
+  run.className = "run";
+  const head = document.createElement("div");
+  head.className = "run-head running";
+  head.innerHTML = '<span class="dot"></span><span class="label">pipeline</span><span class="status">running…</span>';
+  const term = document.createElement("pre");
+  term.className = "term";
+  run.appendChild(head);
+  run.appendChild(term);
+  messages.appendChild(run);
+  scrollDown();
+  return { head, term, status: head.querySelector(".status") };
+}
+
+async function run(requestText) {
+  const { head, term, status } = addExchange(requestText);
+  controller = new AbortController();
+  setRunning(true);
+  let raw = "";
+
+  try {
+    const res = await fetch("/run", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ request: requestText }),
+      signal: controller.signal,
+    });
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      raw += decoder.decode(value, { stream: true });
+      const stick = atBottom();
+      term.innerHTML = ansiToHtml(raw);
+      if (stick) scrollDown();
+    }
+    const ok = !/exited with code [^0]/.test(raw) && !/\bHALTED\b/.test(raw);
+    head.className = "run-head " + (ok ? "ok" : "err");
+    status.textContent = ok ? "done" : "halted";
+  } catch (err) {
+    if (err.name === "AbortError") { head.className = "run-head err"; status.textContent = "stopped"; }
+    else { raw += "\n\x1b[31m[client error: " + err.message + "]\x1b[0m\n"; term.innerHTML = ansiToHtml(raw);
+           head.className = "run-head err"; status.textContent = "error"; }
+  } finally {
+    controller = null;
+    setRunning(false);
+  }
+}
+
+function submit() {
+  if (controller) { controller.abort(); return; } // button doubles as Stop
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = "";
+  autosize();
+  run(text);
+}
+
+$("#composer").addEventListener("submit", (e) => { e.preventDefault(); submit(); });
+input.addEventListener("input", autosize);
+input.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); }
+});
+input.focus();
+</script>
+</body>
+</html>

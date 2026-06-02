@@ -32,7 +32,7 @@ the loop converges instead of retrying blind.
 
 ```
 agentic-pipeline-example/
-├── .env / .env.example       ← config: AGENTS, CLAUDE_MODEL, LINEAR_API_KEY (see below)
+├── .env / .env.example       ← config: LINEAR_API_KEY, CLAUDE_MODEL (see below)
 ├── .knowledge/               ← the LIVING knowledge base every agent reads
 │   ├── CLAUDE.md             ← coding standards (also the reviewer's rubric)
 │   ├── skills/               ← reusable procedures (add a NestJS module / Angular feature)
@@ -45,12 +45,13 @@ agentic-pipeline-example/
 │   ├── events.mjs            ← event vocabulary
 │   ├── claude-cli.mjs        ← adapter: runs each agent via your local `claude -p`
 │   └── linear.mjs            ← Linear GraphQL client (create / comment / close)
-├── example/
-│   ├── feature-request.md    ← default input if you don't pass one
-│   ├── run.mjs               ← wires it together and runs the pipeline
-│   ├── agents.cli.mjs        ← LIVE agents (real claude + real edits + Linear)
-│   ├── simulated-agents.mjs  ← offline stubs (no claude, no network)
-│   └── artifacts/            ← every run writes its paper trail here
+├── runner/
+│   ├── run.mjs               ← wires it together and runs the pipeline (entry point)
+│   ├── agents.cli.mjs        ← the live agents (real claude + real edits + Linear)
+│   └── artifacts/            ← the current run's paper trail (overwritten each run)
+├── server.mjs                ← tiny web server: runs the pipeline, streams output to the browser
+├── web/index.html            ← browser UI: type a request, watch the live terminal
+├── history/                  ← one file per successful run (request + plan), never overwritten
 ├── libs/shared-types/        ← request/response contracts shared by FE + BE
 └── apps/taskapp/             ← THE PRODUCT the agents build into
     ├── backend/              ← NestJS, in-memory store, Jest (runnable + tested)
@@ -61,33 +62,39 @@ agentic-pipeline-example/
 
 ## Run it
 
-### Simulated — offline, zero setup
+The pipeline always runs **live** against your local Claude.
 
-Fast dry-run of the whole flow with canned outputs (no Claude, no network):
-
-```bash
-node example/run.mjs
-```
-
-You'll see every state, the two human gates (auto-approved), a scripted "test fails →
-retry" loop, and a full artifact trail in `example/artifacts/`.
-
-### Live — your local Claude actually does the work
-
-**Prerequisites:** Claude Code installed and logged in (`claude login`), and the app
+**Prerequisites:** Claude Code installed and logged in (`claude login`), and the target app
 installed so the implement/test steps run for real:
 
 ```bash
-cp .env.example .env                 # then put your Linear key in it (optional)
+cp .env.example .env                 # paste your Linear key (optional); tweak CLAUDE_MODEL if you like
 cd apps/taskapp/backend  && npm install && cd -
 cd apps/taskapp/frontend && npm install && cd -
-
-node --env-file=.env example/run.mjs "add a due-date field to tasks"
 ```
 
-`AGENTS=live` lives in `.env`, so no command-line prefix is needed. The agents reason about
-your real app, edit `apps/taskapp`, run `npm test`, and (with a Linear key) open + close a
-real ticket.
+`.env` is loaded automatically by the runner — no `--env-file` needed.
+
+### Web UI (recommended)
+
+```bash
+npm run web        # → http://localhost:4000   (set PORT=… to change)
+```
+
+Type a feature request, hit **Run**, and watch every state — including each agent's live
+tool calls (`→ Read(…)`, `→ Bash(npm test)`, `→ Edit(…)`) — stream into the page. Runs stack
+like a chat transcript.
+
+### Command line
+
+```bash
+node runner/run.mjs "add a due-date field to tasks"
+node runner/run.mjs ./my-request.md
+```
+
+A request is required (there's no default). Either way the agents reason about your real app,
+edit `apps/taskapp`, run `npm test`, and (with a Linear key) open + close a real ticket. Each
+successful run appends its plan to `history/`.
 
 > A live run makes several `claude` calls and runs the test suites, so it takes a few
 > minutes and uses your subscription quota.
@@ -96,14 +103,14 @@ real ticket.
 
 ## Configuration (`.env`)
 
+`.env` is loaded automatically by the runner and the web server — no `--env-file` needed.
+It's gitignored; `.env.example` is the template.
+
 | Variable | What it does |
 |---|---|
-| `AGENTS=live` | Use the real agents (`agents.cli.mjs`). Remove/comment it to run simulated. |
-| `CLAUDE_MODEL` | Model passed to `claude --model …` (e.g. `claude-sonnet-4-6`). Unset = your Claude Code default. |
 | `LINEAR_API_KEY` | Free personal key → spec-writer creates a real ticket, closer marks it Done. Unset = that step no-ops. |
 | `LINEAR_TEAM_ID` | Optional. Defaults to your first Linear team. |
-
-`.env` is gitignored; `.env.example` is the template.
+| `CLAUDE_MODEL` | Model passed to `claude --model …` (e.g. `claude-sonnet-4-6`). Unset = your Claude Code default. |
 
 ---
 
@@ -128,9 +135,9 @@ The frontend's API base comes from `src/environments/` (`environment.development
 
 ---
 
-## What's live vs simulated
+## What's live vs stubbed
 
-| Live (really happens) | Simulated (stubbed) |
+| Live (really happens) | Stubbed (not executed) |
 |---|---|
 | Scout / Spec / Plan / Review / Curate via local `claude` | Opening a GitHub PR (we capture the diff only) |
 | Implementer edits real backend + frontend code | Preview environment + E2E run |
@@ -138,7 +145,8 @@ The frontend's API base comes from `src/environments/` (`environment.development
 | Spec-writer creates a Linear ticket; closer closes it | Human approvals (auto-approved in the demo) |
 | Real `git diff` + full artifact trail | |
 
-The simulated items are the obvious build-out points for production.
+The two stubbed back-half steps (`preview_e2e`, `merge_release`) are inline placeholders
+clearly marked "infra step — not executed" — the obvious build-out points for production.
 
 ---
 
@@ -154,8 +162,8 @@ The simulated items are the obvious build-out points for production.
   ADRs) + its own definition. The reviewer gates against `CLAUDE.md`; the curator proposes
   updates to it from review feedback.
 - **Graceful degradation.** No Linear key → ticket step no-ops. App not installed → implement/
-  test fall back to simulated. App inside a parent git repo → it edits in place without nesting
-  a repo. It always runs.
+  test fail fast with a clear `npm install` message. App inside a parent git repo → it edits in
+  place without nesting a repo.
 
 ### Make it production-grade
 
