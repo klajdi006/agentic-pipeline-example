@@ -328,6 +328,33 @@ function addExchange(requestText) {
   return { head: run.querySelector(".run-head"), term: run.querySelector(".term"), status: run.querySelector(".status"), stopBtn: run.querySelector(".stopbtn") };
 }
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Reattach to a run whose live stream dropped (typically the machine slept). The run keeps
+// going server-side, so poll its saved output + status until it reaches a terminal state.
+async function followRun(id, term, head, status) {
+  status.textContent = "reconnecting…";
+  head.className = "run-head running";
+  for (let i = 0; i < 720; i++) { // ~30 min cap @ 2.5s
+    await sleep(2500);
+    let meta = null;
+    try { meta = (await (await fetch("/api/runs")).json()).find((r) => r.id === id); }
+    catch { continue; } // server unreachable (still asleep / restarting) — keep trying
+    try {
+      const text = await (await fetch(`/api/runs/${encodeURIComponent(id)}/output`)).text();
+      const stick = atBottom();
+      term.innerHTML = ansiToHtml(stripMarker(text));
+      if (stick) scrollDown();
+    } catch { /* ignore a transient read */ }
+    if (meta && meta.status && meta.status !== "running") {
+      head.className = "run-head " + (meta.status === "shipped" ? "ok" : "err");
+      status.textContent = meta.status;
+      return;
+    }
+  }
+  head.className = "run-head err"; status.textContent = "disconnected";
+}
+
 // Each run is fully independent: its own AbortController and its own card. Starting a
 // new run never touches another — several can stream at once (the server caps/queues them).
 async function runLive(requestText) {
@@ -356,7 +383,13 @@ async function runLive(requestText) {
     status.textContent = ok ? "done" : "halted";
   } catch (err) {
     if (err.name === "AbortError") { head.className = "run-head err"; status.textContent = "stopped"; }
-    else { raw += "\n\x1b[31m[client error: " + err.message + "]\x1b[0m\n"; term.innerHTML = ansiToHtml(stripMarker(raw)); head.className = "run-head err"; status.textContent = "error"; }
+    else {
+      // The stream dropped (usually the machine slept). The run is NOT dead — it keeps going
+      // server-side — so reattach and follow it to completion instead of reporting an error.
+      const id = (raw.match(/::run (\S+?)::/) || [])[1];
+      if (id) await followRun(id, term, head, status);
+      else { raw += "\n\x1b[33m[connection lost — reopen this run from the sidebar]\x1b[0m\n"; term.innerHTML = ansiToHtml(stripMarker(raw)); head.className = "run-head err"; status.textContent = "disconnected"; }
+    }
   } finally {
     activeRuns--;
     stopBtn.remove();

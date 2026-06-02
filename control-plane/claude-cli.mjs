@@ -126,6 +126,10 @@ export async function runClaude({ prompt, agentPromptPath, allowedTools = [], sc
     "--verbose",
     "--append-system-prompt", systemPrompt(agentPromptPath),
     "--permission-mode", permissionMode,
+    // Ignore the user's GLOBAL MCP servers. The pipeline uses only built-in tools (and its
+    // own Linear client) — loading 13 global MCP servers injected ~23k tokens of tool defs
+    // into every call (≈12× the cost, slower per-turn) and attempted dead-tunnel connections.
+    "--strict-mcp-config",
   ];
   if (allowedTools.length) args.push("--allowedTools", allowedTools.join(","));
   if (process.env.CLAUDE_MODEL) args.push("--model", process.env.CLAUDE_MODEL); // e.g. claude-sonnet-4-6

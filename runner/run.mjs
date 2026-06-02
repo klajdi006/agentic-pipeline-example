@@ -95,7 +95,7 @@ const cell = (s) => String(s ?? "").replace(/\|/g, "\\|").replace(/\n/g, " ");
 const log = {
   state(id, def, attempt) {
     const a = attempt > 1 ? c.amber(` (attempt ${attempt})`) : "";
-    console.log(`\n${c.b(c.blue("▶ " + id))}${a}  ${c.dim("agent:")} ${def.agent}${def.isolation ? c.dim("  [worktree]") : ""}`);
+    console.log(`\n${c.b(c.blue("▶ " + id))}${a}  ${c.dim("agent:")} ${def.agent}`);
   },
   fail(id, why, target) {
     console.log(`  ${c.red("✗ FAIL")} ${why}`);
@@ -136,18 +136,26 @@ function recordState(state, attempt, calls) {
   t.durationMs += agg.durationMs; t.claudeCalls += calls.length; t.estimated = t.estimated || agg.estimated;
 }
 
-// Per-run isolation: give this run its own git worktree + branch so it can run
-// CONCURRENTLY with other runs without stomping the shared working tree. Set
-// NO_WORKTREE=1 to edit the main checkout in place (the original single-run behavior).
+// By default the implementer edits apps/taskapp IN PLACE and leaves the changes UNCOMMITTED
+// in your working tree — so `git status` shows them and you review/commit/discard yourself.
+// Opt into WORKTREE=1 for an isolated per-run worktree (enables parallel runs — also bump
+// MAX_CONCURRENT_RUNS on the server).
 let workspace = null;
-if (!process.env.NO_WORKTREE) {
+if (process.env.WORKTREE) {
   try {
     workspace = await createWorktree({ root: ROOT, appDir: join(ROOT, "apps/taskapp"), runId });
     console.log(c.dim(`   Worktree: .worktrees/${runId}/ on ${workspace.branch}`));
   } catch (e) {
     console.log(c.amber(`   ⚠ worktree isolation unavailable (${e.message}) — editing the main checkout.`));
   }
+} else {
+  console.log(c.dim("   Editing apps/taskapp in place — changes stay UNCOMMITTED in your working tree (review with `git status`)."));
 }
+
+// Set true on a stop request (SIGTERM / Ctrl-C). The wrapper below refuses to start any
+// further agent once it's set, so the pipeline can't advance into a worktree that's about
+// to be torn down — the loop unwinds and the single cleanup happens in `finally`.
+let stopping = false;
 
 // Wrap agents so each success prints its one-line summary AND its claude usage is
 // attributed to the state it ran in (ctx.ledger.state is the current state).
@@ -156,6 +164,7 @@ const agents = Object.fromEntries(
   Object.entries(rawAgents).map(([name, fn]) => [
     name,
     async (ctx) => {
+      if (stopping) throw new Error("run stopped by user"); // don't start a new stage mid-stop
       const r = await fn(ctx);
       recordState(ctx.ledger.state, ctx.attempt, drainUsage());
       if (r.ok !== false) log.done(r.summary);
@@ -183,19 +192,16 @@ const STATUS_BY_STATE = { DONE: "shipped", ESCALATE: "escalated", ROLLBACK: "rol
 let exitCode = 0;
 let ledger = null;
 
-// Graceful stop (SIGTERM from the server's stop button, or Ctrl-C): kill the in-flight
-// claude call, mark the run stopped, tear down the worktree, then exit.
-let stopping = false;
-async function gracefulStop() {
+// Graceful stop (SIGTERM from the server's stop button, or Ctrl-C). DON'T clean up here —
+// just flag it and kill the in-flight claude call. The kill makes the current stage reject;
+// the wrapper's guard stops the next stage from starting; runPipeline then rejects and the
+// single cleanup runs in `finally`, once nothing is using the worktree. (Cleaning up here
+// would race the still-running loop and delete the worktree out from under the next agent.)
+function gracefulStop() {
   if (stopping) return;
   stopping = true;
-  console.log(c.amber("\n■ stop requested — halting run and cleaning up…"));
+  console.log(c.amber("\n■ stop requested — halting (worktree is cleaned up on exit)…"));
   killActive();
-  try { writeMeta({ status: "stopped", finishedAt: new Date().toISOString(), metrics, escalations: ledger?.escalations || [] }); } catch { /* best-effort */ }
-  try { writeMetricsArtifact(ledger); } catch { /* best-effort */ }
-  if (workspace && !process.env.KEEP_WORKTREE) { try { await workspace.cleanup(); } catch { /* best-effort */ } }
-  try { writeIndex(ROOT); } catch { /* best-effort */ }
-  process.exit(130);
 }
 process.on("SIGTERM", gracefulStop);
 process.on("SIGINT", gracefulStop);
@@ -212,11 +218,17 @@ try {
     escalation: ledger.escalation || null,
   });
 } catch (err) {
-  // An agent (or the orchestrator) threw — record the run as errored instead of leaving it
-  // dangling as "running", and keep whatever partial artifacts were written.
-  console.error(`\n${c.red("✗ Pipeline errored: " + (err?.message || err))}`);
-  writeMeta({ status: "error", finishedAt: new Date().toISOString(), error: String(err?.message || err), metrics });
-  exitCode = 1;
+  if (stopping) {
+    // User-requested stop — record it as stopped, not an error.
+    writeMeta({ status: "stopped", finishedAt: new Date().toISOString(), metrics, escalations: ledger?.escalations || [] });
+    exitCode = 130;
+  } else {
+    // An agent (or the orchestrator) threw — record the run as errored instead of leaving it
+    // dangling as "running", and keep whatever partial artifacts were written.
+    console.error(`\n${c.red("✗ Pipeline errored: " + (err?.message || err))}`);
+    writeMeta({ status: "error", finishedAt: new Date().toISOString(), error: String(err?.message || err), metrics });
+    exitCode = 1;
+  }
 } finally {
   try { writeMetricsArtifact(ledger); } catch { /* best-effort */ }
   // Tear down the worktree + per-run branch (the diff is already saved as an artifact).
