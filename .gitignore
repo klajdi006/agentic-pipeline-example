@@ -1,3 +1,7 @@
 node_modules/
 .env
 *.log
+
+# generated pipeline runs — keep the index, ignore the bulky per-run folders
+runs/*
+!runs/INDEX.md

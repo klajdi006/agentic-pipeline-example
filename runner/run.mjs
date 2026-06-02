@@ -1,6 +1,6 @@
-// Runs the pipeline LIVE (real `claude` / `npm test` / `git`) and writes the artifact
-// trail for the current run to runner/artifacts/. On a successful run it also appends
-// the planner result to history/ so future runs have an overview of what shipped before.
+// Runs the pipeline LIVE (real `claude` / `npm test` / `git`). Everything for one run —
+// all artifacts plus a meta.json — is written to its own folder under runs/<id>/, and
+// runs/INDEX.md is regenerated so you always have a navigable table of contents.
 //
 //   node runner/run.mjs "Add a CSV export endpoint for tasks"
 //   node runner/run.mjs ./my-request.md
@@ -12,16 +12,14 @@ import { fileURLToPath } from "node:url";
 import { runPipeline } from "../control-plane/orchestrator.mjs";
 import { STATES } from "../control-plane/state-machine.mjs";
 import { makeAgents } from "./agents.cli.mjs";
+import { makeRunId, runDir, firstLine as firstLineOf, writeIndex } from "./runs.mjs";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
-const ARTIFACTS = join(__dir, "artifacts");      // transient trail for the current run
-const HISTORY = join(__dir, "..", "history");    // durable, one file per successful run
-mkdirSync(ARTIFACTS, { recursive: true });
+const ROOT = join(__dir, "..");
 
 // Load .env (LINEAR_API_KEY, CLAUDE_MODEL, …) so the web UI and a bare `node runner/run.mjs`
-// both pick it up — no need to remember `--env-file`. Existing env vars win, so an explicit
-// `--env-file` or exported value still takes precedence.
-const ENV_FILE = join(__dir, "..", ".env");
+// both pick it up — no need to remember `--env-file`. Existing env vars win.
+const ENV_FILE = join(ROOT, ".env");
 if (existsSync(ENV_FILE) && typeof process.loadEnvFile === "function") {
   try { process.loadEnvFile(ENV_FILE); } catch { /* malformed .env — ignore */ }
 }
@@ -37,12 +35,34 @@ const c = {
   green: (s) => `\x1b[32m${s}\x1b[0m`,
 };
 
-function writeArtifact(name, content) {
-  const p = join(ARTIFACTS, name);
-  writeFileSync(p, content);
-  console.log(c.dim(`        ↳ wrote artifacts/${name}`));
-  return p;
+// ---- input: a request is required (inline text or a path to a file) ----
+const arg = process.argv[2];
+if (!arg || !arg.trim()) {
+  console.error(c.red("\n✗ No feature request provided.") + c.dim('\n  Usage: node runner/run.mjs "Add a CSV export endpoint for tasks"\n         node runner/run.mjs ./my-request.md\n'));
+  process.exit(1);
 }
+const request = existsSync(arg) ? readFileSync(arg, "utf8") : arg;
+const firstLine = firstLineOf(request);
+
+// ---- this run's own folder (the web server passes RUN_ID so paths match) ----
+const startedAt = new Date().toISOString();
+const runId = process.env.RUN_ID || makeRunId(firstLine);
+process.env.RUN_ID = runId; // make it available to the agents (e.g. for the Linear comment)
+const RUN_DIR = runDir(ROOT, runId);
+mkdirSync(RUN_DIR, { recursive: true });
+
+function writeArtifact(name, content) {
+  writeFileSync(join(RUN_DIR, name), content);
+  console.log(c.dim(`        ↳ wrote ${name}`));
+  return join(RUN_DIR, name);
+}
+function writeMeta(extra) {
+  writeFileSync(
+    join(RUN_DIR, "meta.json"),
+    JSON.stringify({ id: runId, request: firstLine, startedAt, ...extra }, null, 2)
+  );
+}
+writeMeta({ status: "running" }); // so an in-flight run shows up in the history list
 
 // Console "narrator" — stands in for the dashboard / Linear comments in production.
 const log = {
@@ -89,23 +109,14 @@ const agents = Object.fromEntries(
 
 // The human gates. In this demo they auto-approve (clearly marked); in production these
 // block on a real Linear approval / GitHub PR review.
-async function approveGate(name, ledger) {
+async function approveGate(name) {
   return { approved: true, by: name === "human-approve-spec" ? "PM (auto-approved in demo)" : "Tech lead (auto-approved in demo)" };
 }
 
-// Input: a CLI arg — inline text OR a path to a file. A request is now REQUIRED
-// (there is no default feature-request.md anymore).
-const arg = process.argv[2];
-if (!arg || !arg.trim()) {
-  console.error(c.red("\n✗ No feature request provided.") + c.dim('\n  Usage: node runner/run.mjs "Add a CSV export endpoint for tasks"\n         node runner/run.mjs ./my-request.md\n'));
-  process.exit(1);
-}
-const request = existsSync(arg) ? readFileSync(arg, "utf8") : arg;
-
-const firstLine = request.split("\n").find((l) => l.trim() && !l.startsWith("#"))?.trim() ?? request.trim();
 console.log(c.b("\n🤖 Agentic Engineering Pipeline — live run"));
 console.log(c.dim("   Request: " + firstLine.slice(0, 80) + (firstLine.length > 80 ? "…" : "")));
-const appReady = existsSync(join(__dir, "../apps/taskapp/backend/node_modules"));
+console.log(c.dim("   Run folder: runs/" + runId + "/"));
+const appReady = existsSync(join(ROOT, "apps/taskapp/backend/node_modules"));
 console.log(c.dim("   scout/spec/plan/review/curate call your local `claude`."));
 console.log(c.dim("   Linear: " + (process.env.LINEAR_API_KEY ? "enabled — a real ticket will be created/closed" : "disabled (set LINEAR_API_KEY to create a real ticket)")));
 console.log(c.dim("   App: " + (appReady ? "installed → implement/test/PR run live against apps/taskapp/backend" : "NOT installed → implement/test/PR will error (cd apps/taskapp/backend && npm install)")));
@@ -113,18 +124,15 @@ console.log(c.dim("   states: " + Object.keys(STATES).join(" → ")));
 
 const ledger = await runPipeline({ ticketKey: "TASK-142", request, agents, approveGate, log });
 
-// Durable record: on success, append THIS run's plan to history/ (one file per run, never
-// overwritten) so future runs can see what was built before.
-if (ledger.state === "DONE" && ledger.artifacts.plan) {
-  mkdirSync(HISTORY, { recursive: true });
-  const ts = new Date().toISOString().replace(/[:.]/g, "-");
-  const slug = firstLine.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48) || "run";
-  const file = `${ts}-${slug}.json`;
-  writeFileSync(
-    join(HISTORY, file),
-    JSON.stringify({ completedAt: new Date().toISOString(), ticketKey: ledger.ticketKey, request: firstLine, plan: ledger.artifacts.plan }, null, 2)
-  );
-  console.log(c.dim(`\n  ↳ saved plan to history/${file}`));
-}
+// Finalize this run's record and refresh the index.
+const STATUS_BY_STATE = { DONE: "shipped", ESCALATE: "escalated", ROLLBACK: "rolled-back" };
+writeMeta({
+  status: STATUS_BY_STATE[ledger.state] || "halted",
+  finishedAt: new Date().toISOString(),
+  ticket: ledger.linear?.identifier || ledger.ticketKey,
+  linearUrl: ledger.linear?.url || null,
+  agentRuns: ledger.history.length,
+});
+writeIndex(ROOT);
 
-console.log(c.dim("\nArtifacts for this run are in runner/artifacts/ · plan history in history/.\n"));
+console.log(c.dim(`\nThis run: runs/${runId}/  ·  all runs: runs/INDEX.md\n`));

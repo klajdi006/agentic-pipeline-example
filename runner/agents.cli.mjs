@@ -15,17 +15,17 @@
 
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { runClaude } from '../control-plane/claude-cli.mjs';
 import { createIssue, addComment, markDone, linearEnabled } from '../control-plane/linear.mjs';
+import { listRuns } from './runs.mjs';
 
 const exec = promisify(execFile);
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const APP = join(ROOT, 'apps/taskapp');
-const HISTORY = join(ROOT, 'history');
 const BACKEND = join(APP, 'backend');
 const FRONTEND = join(APP, 'frontend');
 const BRANCH = 'feat/TASK-142-scheduler';
@@ -165,17 +165,14 @@ const VERDICT_SCHEMA = {
   required: ['verdict', 'findings'],
 };
 
-// A short list of previously-shipped features (from history/) so the scout has context
-// on what already exists in this app. Best-effort — never throws.
+// A short list of previously-shipped features (from runs/) so the scout has context on
+// what already exists in this app. Best-effort — never throws.
 function pastSummary() {
   try {
-    const files = readdirSync(HISTORY).filter((f) => f.endsWith('.json')).sort().slice(-10);
-    const lines = files
-      .map((f) => {
-        try { return `- ${JSON.parse(readFileSync(join(HISTORY, f), 'utf8')).request}`; } catch { return null; }
-      })
-      .filter(Boolean);
-    return lines.length ? `\n\nPreviously shipped in this app (most recent last) — avoid duplicating, build on these:\n${lines.join('\n')}` : '';
+    const shipped = listRuns(ROOT).filter((r) => r.status === 'shipped').slice(0, 10).reverse();
+    if (!shipped.length) return '';
+    const lines = shipped.map((r) => `- ${r.request}`).join('\n');
+    return `\n\nPreviously shipped in this app (most recent last) — avoid duplicating, build on these:\n${lines}`;
   } catch {
     return '';
   }
@@ -278,7 +275,7 @@ export function makeAgents({ writeArtifact }) {
     if (linearEnabled() && ledger.linear?.id) {
       try {
         await addComment(ledger.linear.id,
-          `Pipeline complete ✅\nReview: ${ledger.artifacts.review?.verdict}\nBranch: \`${BRANCH}\`\nArtifacts: runner/artifacts/`);
+          `Pipeline complete ✅\nReview: ${ledger.artifacts.review?.verdict}\nBranch: \`${BRANCH}\`\nArtifacts: runs/${process.env.RUN_ID || ''}/`);
         const state = await markDone(ledger.linear.id);
         suffix = ` · Linear ${ledger.linear.identifier} → ${state || 'commented'}`;
       } catch (e) { suffix = ` · (Linear update failed: ${e.message})`; }
