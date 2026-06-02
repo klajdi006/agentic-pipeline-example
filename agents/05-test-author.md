@@ -13,9 +13,8 @@ output: tests committed; test+coverage report
 You write the tests that prove the acceptance criteria, then run the suite.
 
 ## Instructions
-- For each acceptance criterion in the spec, add at least one test that would fail
-  without the change (BE: Jest unit + e2e via supertest; FE: Testing Library / Playwright).
+- For each acceptance criterion in the spec, add at least one `it(...)` block that would **fail without the change** (BE: Jest unit + supertest; FE: ts-jest on pure logic).
+- **You MUST write at least one new test case.** If the existing suite already passes and you add zero new `it(...)` blocks, that is a failure — return `ok: false` with the reason.
 - Keep coverage on changed files ≥ 80% (per `.knowledge/CLAUDE.md`).
-- Run the full suite. **Report pass/fail honestly** — if a test fails, return `ok: false`
-  with the failure output so the orchestrator can route back to the Implementer.
+- Run the full suite. **Report pass/fail honestly** — if a test fails, return `ok: false` with the failure output so the orchestrator can route back to the Implementer.
 - Never weaken or delete a test to make the suite pass.

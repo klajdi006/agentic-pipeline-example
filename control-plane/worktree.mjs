@@ -54,10 +54,15 @@ export async function createWorktree({ root, appDir, runId }) {
   const rel = relative(top, appDir);            // 'apps/taskapp' (parent repo) or '' (standalone)
   const wtAppDir = rel ? join(wt, rel) : wt;
 
-  // --detach then checkout -B sidesteps both "branch already checked out" and "branch exists".
-  const added = await git(top, ["worktree", "add", "--detach", wt]);
-  if (!existsSync(wtAppDir)) throw new Error(`git worktree add failed: ${added}`);
+  // Create the worktree but DON'T populate it yet (--detach sidesteps "branch already
+  // checked out"), then sparse-checkout ONLY the product — the app plus the shared libs it
+  // imports — and nothing else. The orchestrator's own code (control-plane, agents, server…)
+  // is deliberately absent: the implementer's sandbox contains just what it's allowed to change.
+  // (Skip sparse in standalone mode, where the repo IS the app.)
+  const added = await git(top, ["worktree", "add", "--no-checkout", "--detach", wt]);
+  if (rel) await git(wt, ["sparse-checkout", "set", "--cone", rel, "libs"]);
   await git(wt, ["checkout", "-B", branch]);
+  if (!existsSync(wtAppDir)) throw new Error(`git worktree add failed: ${added}`);
 
   linkNodeModules(appDir, wtAppDir);
 

@@ -88,13 +88,15 @@ export function killActive() {
 
 // Per-agent system prompt = knowledge base + that agent's own prompt (agents/*.md),
 // passed inline via --append-system-prompt (the `-file` variant isn't on every build).
+// skipKnowledge=true omits the full knowledge base — used by the fast path to cut token overhead.
 const sysCache = new Map();
-function systemPrompt(agentPromptPath) {
-  if (!sysCache.has(agentPromptPath)) {
+function systemPrompt(agentPromptPath, skipKnowledge = false) {
+  const key = agentPromptPath + (skipKnowledge ? ":slim" : "");
+  if (!sysCache.has(key)) {
     const agentPrompt = readFileSync(join(ROOT, agentPromptPath), "utf8");
-    sysCache.set(agentPromptPath, `${KNOWLEDGE}\n\n---\n\n${agentPrompt}`);
+    sysCache.set(key, skipKnowledge ? agentPrompt : `${KNOWLEDGE}\n\n---\n\n${agentPrompt}`);
   }
-  return sysCache.get(agentPromptPath);
+  return sysCache.get(key);
 }
 
 /**
@@ -112,7 +114,7 @@ function systemPrompt(agentPromptPath) {
  *                                         `allowedTools` (e.g. ["Read","Grep","Glob"]) instead.
  * @returns {Promise<string|object>} raw text, or the parsed object when `schema` is given
  */
-export async function runClaude({ prompt, agentPromptPath, allowedTools = [], schema, cwd, permissionMode = "default" }) {
+export async function runClaude({ prompt, agentPromptPath, allowedTools = [], schema, cwd, permissionMode = "default", skipKnowledge = false }) {
   // Ask for strict JSON in the prompt — more reliable across CLI versions than --json-schema,
   // which returned malformed output (e.g. `{ title }`) on some builds.
   const finalPrompt = schema
@@ -124,8 +126,12 @@ export async function runClaude({ prompt, agentPromptPath, allowedTools = [], sc
     "-p", finalPrompt,
     "--output-format", "stream-json",
     "--verbose",
-    "--append-system-prompt", systemPrompt(agentPromptPath),
+    "--append-system-prompt", systemPrompt(agentPromptPath, skipKnowledge),
     "--permission-mode", permissionMode,
+    // Ignore the user's GLOBAL MCP servers. The pipeline uses only built-in tools (and its
+    // own Linear client) — loading 13 global MCP servers injected ~23k tokens of tool defs
+    // into every call (≈12× the cost, slower per-turn) and attempted dead-tunnel connections.
+    "--strict-mcp-config",
   ];
   if (allowedTools.length) args.push("--allowedTools", allowedTools.join(","));
   if (process.env.CLAUDE_MODEL) args.push("--model", process.env.CLAUDE_MODEL); // e.g. claude-sonnet-4-6

@@ -2,15 +2,15 @@
 // idempotent, resumable. Here it's an in-memory walk of the state machine so the example
 // runs offline — but the shape (states, gates, retry routing, ledger) is the real one.
 
-import { STATES, START, MAX_ATTEMPTS, nextState, failState } from "./state-machine.mjs";
+import { STATES as _STATES, START as _START, MAX_ATTEMPTS as _MAX } from "./state-machine.mjs";
 
-export async function runPipeline({ ticketKey, request, agents, approveGate, log }) {
+export async function runPipeline({ ticketKey, request, agents, approveGate, log, states = _STATES, start = _START, maxAttempts = _MAX }) {
   // `ledger` is the durable state — the only source of truth. A restart would replay from here.
-  const ledger = { ticketKey, request, state: START, attempts: {}, artifacts: {}, history: [], escalations: [] };
+  const ledger = { ticketKey, request, state: start, attempts: {}, artifacts: {}, history: [], escalations: [] };
 
   while (ledger.state !== "DONE" && ledger.state !== "ESCALATE" && ledger.state !== "ROLLBACK") {
     const stateId = ledger.state;
-    const def = STATES[stateId];
+    const def = states[stateId];
     ledger.attempts[stateId] = (ledger.attempts[stateId] ?? 0) + 1;
     const attempt = ledger.attempts[stateId];
 
@@ -27,11 +27,11 @@ export async function runPipeline({ ticketKey, request, agents, approveGate, log
 
     // Failure routing: route back (e.g. red CI, blocked review) until attempts run out.
     if (result.ok === false) {
-      const target = failState(stateId);
+      const target = def.onFail ?? "ESCALATE";
       log.fail(stateId, result.summary, target);
       // Record every failure-routing so the run's meta.json explains WHY it looped/escalated.
       ledger.escalations.push({ state: stateId, attempt, reason: result.summary, target });
-      if (attempt >= MAX_ATTEMPTS) {
+      if (attempt >= maxAttempts) {
         log.escalate(stateId, attempt);
         ledger.escalation = { state: stateId, attempts: attempt, reason: result.summary };
         ledger.state = "ESCALATE";
@@ -55,7 +55,7 @@ export async function runPipeline({ ticketKey, request, agents, approveGate, log
       }
     }
 
-    ledger.state = nextState(stateId);
+    ledger.state = def.next ?? "DONE";
   }
 
   log.end(ledger.state, ledger);

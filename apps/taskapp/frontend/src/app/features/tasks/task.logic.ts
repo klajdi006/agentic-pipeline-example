@@ -47,7 +47,8 @@ export function isTask(value: unknown): value is Task {
     typeof t['completed'] === 'boolean' &&
     validPriority &&
     typeof t['createdAt'] === 'string' &&
-    isUtcIso8601(t['createdAt'])
+    isUtcIso8601(t['createdAt']) &&
+    (t['description'] === null || typeof t['description'] === 'string')
   );
 }
 

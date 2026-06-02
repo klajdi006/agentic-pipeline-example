@@ -17,9 +17,10 @@ const __dir = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT) || 4100;
 const INDEX = join(__dir, "web", "index.html");
 
-// Concurrency: each run is its own child process in its own git worktree, so several
-// can run at once. Cap it (claude + dual jest suites are heavy) and queue the rest.
-const MAX_CONCURRENT = Number(process.env.MAX_CONCURRENT_RUNS) || 2;
+// Concurrency: runs edit apps/taskapp IN PLACE by default, so they must run one at a time
+// (parallel in-place runs would stomp each other). Extra runs queue. To run in parallel,
+// start the runner with WORKTREE=1 (isolated per-run checkout) and raise MAX_CONCURRENT_RUNS.
+const MAX_CONCURRENT = Number(process.env.MAX_CONCURRENT_RUNS) || 1;
 let active = 0;
 const queue = [];
 const children = new Map(); // runId → child process (for the stop endpoint)
@@ -51,23 +52,34 @@ function startRun(request, res) {
     env: { ...process.env, RUN_ID: runId },
   });
   children.set(runId, child);
-  const pipe = (d) => { res.write(d); logStream.write(d); };
+  // The run always tees to output.log; it streams to the browser only while connected.
+  // If the client goes away we keep the run going (fire-and-forget) and just stop writing
+  // to the dead response — the run is NOT killed by a dropped connection.
+  let clientGone = false;
+  const endRes = () => { if (!res.writableEnded) { try { res.end(); } catch { /* already gone */ } } };
+  const pipe = (d) => {
+    logStream.write(d);
+    if (!clientGone && !res.writableEnded) { try { res.write(d); } catch { clientGone = true; } }
+  };
   child.stdout.on("data", pipe);
   child.stderr.on("data", pipe);
 
   let released = false;
   const release = () => { if (released) return; released = true; children.delete(runId); active--; pump(); };
 
-  child.on("error", (e) => { pipe(`\n\x1b[31m[failed to start runner: ${e.message}]\x1b[0m\n`); logStream.end(); res.end(); release(); });
+  child.on("error", (e) => { pipe(`\n\x1b[31m[failed to start runner: ${e.message}]\x1b[0m\n`); logStream.end(); endRes(); release(); });
   child.on("close", (code) => {
     const tag = code === 0 ? "\x1b[2m" : "\x1b[31m";
     pipe(`\n${tag}[process exited with code ${code}]\x1b[0m\n`);
     logStream.end();
-    res.end();
+    endRes();
     release();
   });
-  // Client disconnected (closed tab) — stop the run so it doesn't keep billing headless.
-  res.on("close", () => { if (child.exitCode === null) child.kill("SIGTERM"); });
+  // Client disconnected (tab closed / refreshed / navigated). DON'T kill the run — let it
+  // finish; it keeps writing to output.log and you can reattach by clicking it in the
+  // sidebar. Stopping is explicit, via the ✕ button (POST /api/runs/<id>/stop).
+  res.on("close", () => { clientGone = true; });
+  res.on("error", () => { clientGone = true; }); // swallow post-disconnect socket errors
 }
 
 const json = (res, obj, code = 200) => {

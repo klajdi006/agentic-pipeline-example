@@ -22,6 +22,11 @@ describe('TasksService', () => {
     expect(task.createdAt).toBe(new Date(task.createdAt).toISOString());
   });
 
+  it('status defaults to BACKLOG on create', () => {
+    const task = service.create({ title: 'Status check' });
+    expect(task.status).toBe('BACKLOG');
+  });
+
   it('lists all created tasks', () => {
     service.create({ title: 'A' });
     service.create({ title: 'B' });

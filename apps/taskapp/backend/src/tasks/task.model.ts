@@ -10,11 +10,22 @@ export const TaskPriority = {
 } as const;
 export type TaskPriority = (typeof TaskPriority)[keyof typeof TaskPriority];
 
+export const TaskStatus = {
+  BACKLOG: 'BACKLOG',
+  IN_PROGRESS: 'IN_PROGRESS',
+  DONE: 'DONE',
+} as const;
+export type TaskStatus = (typeof TaskStatus)[keyof typeof TaskStatus];
+
 export interface Task {
   id: string;
   title: string;
   completed: boolean;
   priority: TaskPriority;
+  status: TaskStatus;
+  description: string | null;
   /** UTC ISO-8601 timestamp. Never store local time (see CLAUDE.md). */
   createdAt: string;
+  deadline: string | null;
+  assignee: string | null;
 }
