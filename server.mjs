@@ -14,8 +14,54 @@ import { fileURLToPath } from "node:url";
 import { makeRunId, runDir, firstLine, listRuns } from "./runner/runs.mjs";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
-const PORT = Number(process.env.PORT) || 4000;
+const PORT = Number(process.env.PORT) || 4100;
 const INDEX = join(__dir, "web", "index.html");
+
+// Concurrency: each run is its own child process in its own git worktree, so several
+// can run at once. Cap it (claude + dual jest suites are heavy) and queue the rest.
+const MAX_CONCURRENT = Number(process.env.MAX_CONCURRENT_RUNS) || 2;
+let active = 0;
+const queue = [];
+
+// Start queued runs until the cap is reached. A client that disconnected while waiting
+// is skipped (no slot consumed).
+function pump() {
+  while (active < MAX_CONCURRENT && queue.length) {
+    const job = queue.shift();
+    if (job.res.writableEnded) continue;
+    active++;
+    startRun(job.request, job.res);
+  }
+}
+
+function startRun(request, res) {
+  const runId = makeRunId(firstLine(request));
+  const dir = runDir(__dir, runId);
+  mkdirSync(dir, { recursive: true });
+  const logStream = createWriteStream(join(dir, "output.log"), { flags: "w" });
+  res.write(`\x1b[2m::run ${runId}::\x1b[0m\n`); // surfaced to the client so it can link the run
+
+  const child = spawn(process.execPath, [join(__dir, "runner", "run.mjs"), request], {
+    cwd: __dir,
+    env: { ...process.env, RUN_ID: runId },
+  });
+  const pipe = (d) => { res.write(d); logStream.write(d); };
+  child.stdout.on("data", pipe);
+  child.stderr.on("data", pipe);
+
+  let released = false;
+  const release = () => { if (released) return; released = true; active--; pump(); };
+
+  child.on("error", (e) => { pipe(`\n\x1b[31m[failed to start runner: ${e.message}]\x1b[0m\n`); logStream.end(); res.end(); release(); });
+  child.on("close", (code) => {
+    const tag = code === 0 ? "\x1b[2m" : "\x1b[31m";
+    pipe(`\n${tag}[process exited with code ${code}]\x1b[0m\n`);
+    logStream.end();
+    res.end();
+    release();
+  });
+  res.on("close", () => { if (child.exitCode === null) child.kill(); });
+}
 
 const json = (res, obj, code = 200) => {
   res.writeHead(code, { "content-type": "application/json; charset=utf-8", "cache-control": "no-cache" });
@@ -87,28 +133,12 @@ const server = createServer((req, res) => {
       });
       if (!request.trim()) { res.end("\x1b[31m✗ Type a feature request first.\x1b[0m\n"); return; }
 
-      // Pick the run id here so we can tee output to its folder; run.mjs honours RUN_ID.
-      const runId = makeRunId(firstLine(request));
-      const dir = runDir(__dir, runId);
-      mkdirSync(dir, { recursive: true });
-      const logStream = createWriteStream(join(dir, "output.log"), { flags: "w" });
-      res.write(`\x1b[2m::run ${runId}::\x1b[0m\n`); // surfaced to the client so it can link the run
-
-      const child = spawn(process.execPath, [join(__dir, "runner", "run.mjs"), request], {
-        cwd: __dir,
-        env: { ...process.env, RUN_ID: runId },
-      });
-      const pipe = (d) => { res.write(d); logStream.write(d); };
-      child.stdout.on("data", pipe);
-      child.stderr.on("data", pipe);
-      child.on("error", (e) => { pipe(`\n\x1b[31m[failed to start runner: ${e.message}]\x1b[0m\n`); logStream.end(); res.end(); });
-      child.on("close", (code) => {
-        const tag = code === 0 ? "\x1b[2m" : "\x1b[31m";
-        pipe(`\n${tag}[process exited with code ${code}]\x1b[0m\n`);
-        logStream.end();
-        res.end();
-      });
-      res.on("close", () => { if (child.exitCode === null) child.kill(); });
+      // Queue if we're at the cap; pump() starts it (and streams) when a slot frees.
+      if (active >= MAX_CONCURRENT) {
+        res.write(`\x1b[2m⏳ queued — ${active} run(s) in progress (cap ${MAX_CONCURRENT})…\x1b[0m\n`);
+      }
+      queue.push({ request, res });
+      pump();
     });
     return;
   }

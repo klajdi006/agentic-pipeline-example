@@ -25,43 +25,13 @@ import { listRuns } from './runs.mjs';
 
 const exec = promisify(execFile);
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const APP = join(ROOT, 'apps/taskapp');
-const BACKEND = join(APP, 'backend');
-const FRONTEND = join(APP, 'frontend');
-const BRANCH = 'feat/TASK-142-scheduler';
-const APP_READY = existsSync(join(BACKEND, 'node_modules')); // installed → implement/test go live
-const TICKET = 'TASK-142';
+const DEFAULT_APP = join(ROOT, 'apps/taskapp'); // the main checkout — used when no per-run worktree
+const DEFAULT_BRANCH = 'feat/TASK-142-scheduler';
 
 const TOOLS = ['Read', 'Edit', 'Write', 'Bash', 'Grep', 'Glob'];
 
-// ---- git / npm helpers (never throw — return output for the trace) -------------
-async function git(args) {
-  try {
-    const { stdout } = await exec('git', ['-C', APP, ...args], { maxBuffer: 32 * 1024 * 1024 });
-    return stdout;
-  } catch (e) {
-    return (e.stdout || '') + (e.stderr || e.message);
-  }
-}
-// Decide how to handle git for apps/taskapp WITHOUT ever creating a nested repo:
-//  'own'    → apps/taskapp is its own repo (standalone use) → safe to branch.
-//  'parent' → it lives inside a parent repo (e.g. the example repo you pushed) → DON'T
-//             init or branch; just edit the working tree and capture a path-scoped diff.
-let repoMode = null;
-async function ensureRepo() {
-  if (repoMode) return repoMode;
-  let top = '';
-  try { top = (await exec('git', ['-C', APP, 'rev-parse', '--show-toplevel'])).stdout.trim(); } catch { /* no repo */ }
-  if (top && top !== APP) { repoMode = 'parent'; return repoMode; }   // inside a parent repo — never nest
-  if (top === APP) { repoMode = 'own'; return repoMode; }
-  // No git repo anywhere → create a dedicated one so branch isolation works standalone.
-  await exec('git', ['-C', APP, 'init', '-b', 'main']).catch(() => {});
-  await exec('git', ['-C', APP, 'add', '-A']).catch(() => {});
-  await exec('git', ['-C', APP, '-c', 'user.email=pipeline@local', '-c', 'user.name=pipeline', 'commit', '-m', 'baseline'], { maxBuffer: 32 * 1024 * 1024 }).catch(() => {});
-  repoMode = 'own';
-  return repoMode;
-}
-
+// npm test for one stack (never throws — returns output for the trace). `cwd`-bound,
+// so it works against either the main checkout or a per-run worktree.
 async function runTests(cwd, label) {
   try {
     const { stdout, stderr } = await exec('npm', ['test', '--silent'], { cwd, maxBuffer: 64 * 1024 * 1024 });
@@ -69,15 +39,6 @@ async function runTests(cwd, label) {
   } catch (e) {
     return { ok: false, out: `[${label}] FAIL\n${e.stdout || ''}${e.stderr || e.message}` };
   }
-}
-
-// The real CI gate — runs BOTH stacks. Frontend is gated only if it's installed.
-async function npmTest() {
-  const be = await runTests(BACKEND, 'backend');
-  const fe = existsSync(join(FRONTEND, 'node_modules'))
-    ? await runTests(FRONTEND, 'frontend')
-    : { ok: true, out: '[frontend] skipped — run `npm install` in apps/taskapp/frontend to gate the FE' };
-  return { ok: be.ok && fe.ok, out: `${be.out}\n\n${fe.out}` };
 }
 
 // ---- structured-output schemas (trimmed for the CLI's --json-schema) ----------
@@ -178,10 +139,10 @@ function pastSummary() {
   }
 }
 
-function renderTicket(spec) {
+function renderTicket(spec, ticketKey) {
   const ac = (spec.acceptanceCriteria || [])
     .map((a) => `- **${a.id}** — Given ${a.given}, when ${a.when}, then ${a.then}.`).join('\n');
-  return `# ${spec.ticketKey || TICKET} — ${spec.title}
+  return `# ${spec.ticketKey || ticketKey} — ${spec.title}
 
 **Problem:** ${spec.problem}
 
@@ -197,7 +158,45 @@ function renderTicket(spec) {
 ${ac}`;
 }
 
-export function makeAgents({ writeArtifact }) {
+export function makeAgents({ writeArtifact, workspace }) {
+  // All paths are PER-RUN: with a worktree they point at the isolated checkout; without
+  // one (single sequential run, or NO_WORKTREE) they fall back to the main checkout — so
+  // existing behavior is unchanged when no workspace is supplied.
+  const APP = workspace?.appDir ?? DEFAULT_APP;
+  const BACKEND = workspace?.backend ?? join(APP, 'backend');
+  const FRONTEND = workspace?.frontend ?? join(APP, 'frontend');
+  const BRANCH = workspace?.branch ?? DEFAULT_BRANCH;
+  const APP_READY = existsSync(join(BACKEND, 'node_modules')); // installed → implement/test go live
+
+  // git in this run's app dir (never throws — returns output for the trace).
+  const git = async (args) => {
+    try { return (await exec('git', ['-C', APP, ...args], { maxBuffer: 32 * 1024 * 1024 })).stdout; }
+    catch (e) { return (e.stdout || '') + (e.stderr || e.message); }
+  };
+  // Only used on the no-worktree fallback path. 'own' → apps/taskapp is its own repo (safe
+  // to branch); 'parent' → it lives inside a parent repo (don't nest/branch — path-scoped diff).
+  let repoMode = null;
+  const ensureRepo = async () => {
+    if (repoMode) return repoMode;
+    let top = '';
+    try { top = (await exec('git', ['-C', APP, 'rev-parse', '--show-toplevel'])).stdout.trim(); } catch { /* no repo */ }
+    if (top && top !== APP) { repoMode = 'parent'; return repoMode; }
+    if (top === APP) { repoMode = 'own'; return repoMode; }
+    await exec('git', ['-C', APP, 'init', '-b', 'main']).catch(() => {});
+    await exec('git', ['-C', APP, 'add', '-A']).catch(() => {});
+    await exec('git', ['-C', APP, '-c', 'user.email=pipeline@local', '-c', 'user.name=pipeline', 'commit', '-m', 'baseline'], { maxBuffer: 32 * 1024 * 1024 }).catch(() => {});
+    repoMode = 'own';
+    return repoMode;
+  };
+  // The real CI gate — runs BOTH stacks. Frontend is gated only if it's installed.
+  const npmTest = async () => {
+    const be = await runTests(BACKEND, 'backend');
+    const fe = existsSync(join(FRONTEND, 'node_modules'))
+      ? await runTests(FRONTEND, 'frontend')
+      : { ok: true, out: '[frontend] skipped — run `npm install` in apps/taskapp/frontend to gate the FE' };
+    return { ok: be.ok && fe.ok, out: `${be.out}\n\n${fe.out}` };
+  };
+
   // implement/test/pr need the real app checked out + installed; there is no simulated
   // fallback anymore, so fail loudly with a fix-it message if it isn't there.
   const requireApp = () => {
@@ -221,12 +220,12 @@ export function makeAgents({ writeArtifact }) {
   const specWriter = async ({ ledger }) => {
     const spec = await runClaude({
       agentPromptPath: 'agents/02-spec-writer.md',
-      prompt: `Feature request:\n\n${ledger.request}\n\nImpact assessment:\n${ledger.artifacts.scout}\n\nEmit the structured spec. ticketKey must be "${TICKET}". Acceptance criteria must be testable by Jest against the NestJS backend.`,
+      prompt: `Feature request:\n\n${ledger.request}\n\nImpact assessment:\n${ledger.artifacts.scout}\n\nEmit the structured spec. ticketKey must be "${ledger.ticketKey}". Acceptance criteria must be testable by Jest against the NestJS backend.`,
       schema: SPEC_SCHEMA,
     });
-    spec.ticketKey = spec.ticketKey || TICKET;
-    const ticketMd = renderTicket(spec);
-    writeArtifact('02-TASK-142-ticket.md', ticketMd);
+    spec.ticketKey = spec.ticketKey || ledger.ticketKey;
+    const ticketMd = renderTicket(spec, ledger.ticketKey);
+    writeArtifact('02-ticket.md', ticketMd);
 
     let suffix = '';
     if (linearEnabled()) {
@@ -286,7 +285,8 @@ export function makeAgents({ writeArtifact }) {
   // ---- LIVE code agents (only when the backend is installed) ----------------
   const liveImplementer = async ({ ledger, attempt }) => {
     requireApp();
-    if (attempt === 1) { await ensureRepo(); await git(['checkout', '-B', BRANCH]); }
+    // With a worktree the run is already on its own branch; only the fallback path branches.
+    if (attempt === 1 && !workspace) { await ensureRepo(); await git(['checkout', '-B', BRANCH]); }
     const fix = ledger.testFail
       ? `\n\nThe backend test suite is currently FAILING — fix the implementation. Tail of the output:\n${String(ledger.testFail).slice(-3500)}`
       : '';
@@ -315,7 +315,7 @@ export function makeAgents({ writeArtifact }) {
       permissionMode: 'acceptEdits',
     });
     const t = await npmTest(); // the REAL gate
-    const md = `# Test report — ${TICKET} (live)\n\n${note}\n\n---\n\n\`npm test\` → **${t.ok ? 'PASS' : 'FAIL'}**\n\n\`\`\`\n${t.out.slice(-3000)}\n\`\`\``;
+    const md = `# Test report — ${ledger.ticketKey} (live)\n\n${note}\n\n---\n\n\`npm test\` → **${t.ok ? 'PASS' : 'FAIL'}**\n\n\`\`\`\n${t.out.slice(-3000)}\n\`\`\``;
     writeArtifact('05-tests-summary.md', md);
     if (t.ok) return { ok: true, summary: 'Tests added; live `npm test` green.', artifact: md };
     ledger.testFail = t.out;
@@ -324,20 +324,20 @@ export function makeAgents({ writeArtifact }) {
 
   const livePrAgent = async ({ ledger }) => {
     requireApp();
-    const mode = await ensureRepo();
     let diff;
-    if (mode === 'own') {
+    if (workspace || (await ensureRepo()) === 'own') {
+      // Worktree (own branch) or standalone repo: stage everything and diff the index.
       await git(['add', '-A']);
       diff = await git(['diff', '--cached']);
     } else {
-      // Inside a parent repo: don't touch its index/branch — capture a path-scoped working-tree diff.
+      // Fallback inside a parent repo: don't touch its index/branch — path-scoped working-tree diff.
       diff = await git(['diff', '--', '.']);
       const untracked = await git(['ls-files', '--others', '--exclude-standard', '--', '.']);
       if (untracked.trim()) diff += `\n\n# New (untracked) files:\n${untracked}`;
     }
     const desc = await runClaude({
       agentPromptPath: 'agents/06-pr-agent.md',
-      prompt: `Write a PR description (markdown) for these changes. Reference ${ledger.linear?.identifier || TICKET} and check off each acceptance criterion.\n\nDiff:\n${diff.slice(0, 12000)}`,
+      prompt: `Write a PR description (markdown) for these changes. Reference ${ledger.linear?.identifier || ledger.ticketKey} and check off each acceptance criterion.\n\nDiff:\n${diff.slice(0, 12000)}`,
       cwd: APP,
     });
     const md = `${desc}\n\n---\n\n## Diff (\`git diff --cached\`)\n\n\`\`\`diff\n${diff.slice(0, 8000)}\n\`\`\``;
@@ -347,8 +347,8 @@ export function makeAgents({ writeArtifact }) {
 
   // ---- infra-bound steps — not executed here (need preview env + real CI/CD) ----
   // Honest placeholders: the pipeline shape is unchanged, but nothing is faked as "shipped".
-  const previewE2e = async () => {
-    const md = `# Preview + E2E — ${TICKET}
+  const previewE2e = async ({ ledger }) => {
+    const md = `# Preview + E2E — ${ledger.ticketKey}
 
 _Infra step — not executed in this environment._
 
@@ -358,8 +358,8 @@ suite against it, then block on **human PR approval** (gate 2) before merge.`;
     return { ok: true, summary: 'Preview + E2E skipped (infra step — not executed).', artifact: md };
   };
 
-  const mergeRelease = async () => {
-    const md = `# Release — ${TICKET}
+  const mergeRelease = async ({ ledger }) => {
+    const md = `# Release — ${ledger.ticketKey}
 
 _Infra step — not executed in this environment._
 

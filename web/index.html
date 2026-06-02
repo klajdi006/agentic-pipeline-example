@@ -70,6 +70,19 @@
     border-radius: 7px; padding: 4px 9px; cursor: pointer; }
   .chip:hover { border-color: #3b4d6b; }
 
+  /* ---- metrics ---- */
+  .agg { font-size: 11px; color: var(--muted); margin-top: 9px; line-height: 1.5; }
+  .agg b { color: #cbd5e1; font-weight: 600; }
+  .metrics { align-self: stretch; border: 1px solid var(--border); border-radius: 12px; background: var(--panel-2); overflow: hidden; }
+  .metrics .mh { padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--panel); font-size: 12px; color: #cbd5e1; }
+  .metrics .mh b { color: #fff; } .metrics .mh .est { color: var(--muted); }
+  .metrics table { width: 100%; border-collapse: collapse; font: 12px ui-monospace, Menlo, monospace; }
+  .metrics th, .metrics td { text-align: left; padding: 5px 12px; border-bottom: 1px solid var(--border); color: #cbd5e1; white-space: nowrap; }
+  .metrics th { color: var(--muted); font-weight: 600; }
+  .metrics td.num, .metrics th.num { text-align: right; }
+  .metrics tr:last-child td { border-bottom: 0; }
+  .metrics .esc { padding: 7px 12px; font-size: 12px; color: #fbbf24; border-top: 1px solid var(--border); }
+
   .b { font-weight: 700; } .dim { opacity: .55; }
   .red { color: #f87171; } .green { color: #4ade80; } .amber { color: #fbbf24; }
   .blue { color: #60a5fa; } .purple { color: #c084fc; } .teal { color: #2dd4bf; }
@@ -91,7 +104,7 @@
 
   <div id="layout">
     <aside id="sidebar">
-      <div class="side-head"><button id="newrun">+ New run</button></div>
+      <div class="side-head"><button id="newrun">+ New run</button><div id="agg" class="agg"></div></div>
       <ul id="runlist"><li class="empty">Loading…</li></ul>
     </aside>
 
@@ -111,9 +124,15 @@
 
 <script>
 const $ = (s) => document.querySelector(s);
-const chat = $("#chat"), messages = $("#messages"), input = $("#request"), sendBtn = $("#send"), runlist = $("#runlist");
+const chat = $("#chat"), messages = $("#messages"), input = $("#request"), sendBtn = $("#send"), runlist = $("#runlist"), agg = $("#agg");
 let controller = null;   // non-null while a live run streams
 let mode = "live";       // "live" | "view"
+const runsById = {};     // id → full meta (so viewRun can render metrics)
+
+// ---- metric formatters ----
+const fmtUsd = (n) => "$" + (Number(n) || 0).toFixed((Number(n) || 0) < 0.1 ? 4 : 2);
+const fmtTok = (n) => (Number(n) || 0) >= 1000 ? ((Number(n) || 0) / 1000).toFixed(1) + "k" : String(Number(n) || 0);
+const fmtDur = (ms) => { const s = (Number(ms) || 0) / 1000; return s >= 90 ? (s / 60).toFixed(1) + "m" : s.toFixed(0) + "s"; };
 
 // ---- ANSI → HTML ----
 const ANSI = { 1:"b", 2:"dim", 31:"red", 32:"green", 33:"amber", 34:"blue", 35:"purple", 36:"teal" };
@@ -144,19 +163,35 @@ const dotClass = (status) => status === "shipped" ? "ok" : status === "running" 
 async function loadRuns(activeId) {
   let runs = [];
   try { runs = await (await fetch("/api/runs")).json(); } catch { /* ignore */ }
+  renderAggregate(runs);
   if (!runs.length) { runlist.innerHTML = '<li class="empty">No runs yet.</li>'; return; }
   runlist.innerHTML = "";
   for (const r of runs) {
+    runsById[r.id] = r;
     const li = document.createElement("li");
     li.className = "run-item" + (r.id === activeId ? " active" : "");
     li.dataset.id = r.id;
     const when = (r.startedAt || "").slice(0, 16).replace("T", " ");
+    const t = r.metrics?.totals;
+    const cost = t && t.claudeCalls ? ` · ${fmtUsd(t.costUsd)} · ${fmtDur(t.durationMs)}` : "";
     li.innerHTML = `<span class="dot ${dotClass(r.status)}"></span>
-      <div><div class="ri-req"></div><div class="ri-meta">${when} · ${r.status || "?"}</div></div>`;
+      <div><div class="ri-req"></div><div class="ri-meta">${when} · ${r.status || "?"}${cost}</div></div>`;
     li.querySelector(".ri-req").textContent = r.request || r.id;
     li.addEventListener("click", () => viewRun(r.id));
     runlist.appendChild(li);
   }
+}
+
+// The CTO line: average cost + time per shipped feature, across all shipped runs.
+function renderAggregate(runs) {
+  const shipped = runs.filter((r) => r.status === "shipped" && r.metrics?.totals?.claudeCalls);
+  if (!shipped.length) { agg.textContent = ""; return; }
+  const sum = shipped.reduce((a, r) => {
+    const t = r.metrics.totals;
+    return { cost: a.cost + t.costUsd, dur: a.dur + t.durationMs, est: a.est || t.estimated };
+  }, { cost: 0, dur: 0, est: false });
+  const n = shipped.length;
+  agg.innerHTML = `<b>${n}</b> shipped · avg <b>${fmtUsd(sum.cost / n)}${sum.est ? " est." : ""}</b>/feature · avg <b>${fmtDur(sum.dur / n)}</b>`;
 }
 
 // ---- view a past run (read-only) ----
@@ -179,6 +214,9 @@ async function viewRun(id) {
     run.querySelector(".status").textContent = ok ? "done" : "halted";
   } catch { term.textContent = "(no saved output for this run)"; }
 
+  // metrics panel (cost / tokens / latency per state)
+  renderMetrics(runsById[id]);
+
   // artifact chips
   try {
     const files = await (await fetch(`/api/runs/${encodeURIComponent(id)}/artifacts`)).json();
@@ -196,6 +234,32 @@ async function viewRun(id) {
     }
   } catch { /* ignore */ }
   chat.scrollTop = 0;
+}
+
+// Render the per-run cost/latency breakdown as a table card.
+function renderMetrics(run) {
+  const m = run?.metrics;
+  if (!m?.totals?.claudeCalls) return;
+  const t = m.totals;
+  const rows = (m.perState || []).map((s) =>
+    `<tr><td>${s.state}${s.attempt > 1 ? ` <span class="dim">#${s.attempt}</span>` : ""}</td>
+       <td class="num">${fmtUsd(s.costUsd)}</td>
+       <td class="num">${fmtTok(s.tokensIn)} / ${fmtTok(s.tokensOut)}</td>
+       <td class="num">${fmtDur(s.durationMs)}</td></tr>`).join("");
+  const h = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const esc = (run.escalations || []).map((e) =>
+    `↺ ${h(e.state)} (attempt ${e.attempt}) → ${h(e.target)}: ${h(e.reason)}`).join("<br>");
+  const card = document.createElement("div");
+  card.className = "metrics";
+  card.innerHTML = `
+    <div class="mh"><b>${fmtUsd(t.costUsd)}</b>${t.estimated ? ' <span class="est">est.</span>' : ""}
+      · ${t.claudeCalls} calls · ${fmtTok(t.tokensIn)} in / ${fmtTok(t.tokensOut)} out · ${fmtDur(t.durationMs)}</div>
+    <table>
+      <tr><th>State</th><th class="num">Cost</th><th class="num">Tokens (in/out)</th><th class="num">Time</th></tr>
+      ${rows}
+    </table>
+    ${esc ? `<div class="esc">${esc}</div>` : ""}`;
+  messages.appendChild(card);
 }
 
 async function openArtifact(id, name) {

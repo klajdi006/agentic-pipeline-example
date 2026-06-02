@@ -4,3 +4,6 @@ node_modules/
 
 # generated pipeline runs (local only — never committed)
 runs/
+
+# per-run git worktrees (created/removed by the runner)
+.worktrees/

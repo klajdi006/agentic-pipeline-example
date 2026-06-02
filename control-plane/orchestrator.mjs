@@ -6,7 +6,7 @@ import { STATES, START, MAX_ATTEMPTS, nextState, failState } from "./state-machi
 
 export async function runPipeline({ ticketKey, request, agents, approveGate, log }) {
   // `ledger` is the durable state — the only source of truth. A restart would replay from here.
-  const ledger = { ticketKey, request, state: START, attempts: {}, artifacts: {}, history: [] };
+  const ledger = { ticketKey, request, state: START, attempts: {}, artifacts: {}, history: [], escalations: [] };
 
   while (ledger.state !== "DONE" && ledger.state !== "ESCALATE" && ledger.state !== "ROLLBACK") {
     const stateId = ledger.state;
@@ -29,8 +29,11 @@ export async function runPipeline({ ticketKey, request, agents, approveGate, log
     if (result.ok === false) {
       const target = failState(stateId);
       log.fail(stateId, result.summary, target);
+      // Record every failure-routing so the run's meta.json explains WHY it looped/escalated.
+      ledger.escalations.push({ state: stateId, attempt, reason: result.summary, target });
       if (attempt >= MAX_ATTEMPTS) {
         log.escalate(stateId, attempt);
+        ledger.escalation = { state: stateId, attempts: attempt, reason: result.summary };
         ledger.state = "ESCALATE";
         break;
       }
@@ -44,6 +47,9 @@ export async function runPipeline({ ticketKey, request, agents, approveGate, log
       const decision = await approveGate(def.gate, ledger);
       log.gateResult(def.gate, decision);
       if (!decision.approved) {
+        const reason = `Human gate '${def.gate}' rejected${decision.by ? " by " + decision.by : ""}`;
+        ledger.escalations.push({ state: stateId, attempt, reason, target: "ESCALATE" });
+        ledger.escalation = { state: stateId, attempts: attempt, reason };
         ledger.state = "ESCALATE";
         break;
       }
