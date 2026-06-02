@@ -48,10 +48,10 @@ agentic-pipeline-example/
 ├── runner/
 │   ├── run.mjs               ← wires it together and runs the pipeline (entry point)
 │   ├── agents.cli.mjs        ← the live agents (real claude + real edits + Linear)
-│   └── artifacts/            ← the current run's paper trail (overwritten each run)
-├── server.mjs                ← tiny web server: runs the pipeline, streams output to the browser
-├── web/index.html            ← browser UI: type a request, watch the live terminal
-├── history/                  ← one file per successful run (request + plan), never overwritten
+│   └── runs.mjs              ← per-run storage helpers (run ids, folders, INDEX.md)
+├── server.mjs                ← web server: runs the pipeline, streams + saves output, serves run history
+├── web/index.html            ← browser UI: run-history sidebar + live terminal
+├── runs/                     ← one folder per run (all artifacts + meta.json) + generated INDEX.md
 ├── libs/shared-types/        ← request/response contracts shared by FE + BE
 └── apps/taskapp/             ← THE PRODUCT the agents build into
     ├── backend/              ← NestJS, in-memory store, Jest (runnable + tested)
@@ -82,8 +82,8 @@ npm run web        # → http://localhost:4000   (set PORT=… to change)
 ```
 
 Type a feature request, hit **Run**, and watch every state — including each agent's live
-tool calls (`→ Read(…)`, `→ Bash(npm test)`, `→ Edit(…)`) — stream into the page. Runs stack
-like a chat transcript.
+tool calls (`→ Read(…)`, `→ Bash(npm test)`, `→ Edit(…)`) — stream into the page. The left
+sidebar lists past runs; click one to re-open its output and browse its artifacts.
 
 ### Command line
 
@@ -93,8 +93,9 @@ node runner/run.mjs ./my-request.md
 ```
 
 A request is required (there's no default). Either way the agents reason about your real app,
-edit `apps/taskapp`, run `npm test`, and (with a Linear key) open + close a real ticket. Each
-successful run appends its plan to `history/`.
+edit `apps/taskapp`, run `npm test`, and (with a Linear key) open + close a real ticket. Every
+run is saved to its own folder under `runs/<id>/` (all artifacts + a `meta.json`), and
+`runs/INDEX.md` is regenerated as a navigable table of contents.
 
 > A live run makes several `claude` calls and runs the test suites, so it takes a few
 > minutes and uses your subscription quota.

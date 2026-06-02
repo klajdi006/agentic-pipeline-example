@@ -38,6 +38,54 @@ function loadKnowledge() {
 }
 const KNOWLEDGE = loadKnowledge();
 
+// --- Usage / cost accounting ---------------------------------------------------
+// The `claude` CLI emits a final `result` event carrying usage + (often) a real
+// dollar cost. We harvest it per call into a per-process buffer that the runner
+// drains and attributes to each pipeline state. (One `node` per run → per-process
+// === per-run.)
+const _usageLog = [];
+
+// Fallback $/MTok when the CLI doesn't report total_cost_usd (e.g. subscription auth).
+// Rough public list prices; only used to ESTIMATE — flagged `est.` in the UI.
+const MODEL_PRICES = {
+  "claude-opus-4-8":    { in: 5,    out: 25 },
+  "claude-sonnet-4-6":  { in: 3,    out: 15 },
+  "claude-haiku-4-5":   { in: 1,    out: 5 },
+};
+function priceFor(model = "") {
+  const key = Object.keys(MODEL_PRICES).find((k) => model.includes(k));
+  return key ? MODEL_PRICES[key] : null;
+}
+
+// Turn a CLI `result` event into a normalized usage record. `estimated` is true
+// when we had to derive cost from token counts rather than the CLI's own figure.
+function usageFromResult(resultEnv) {
+  const u = resultEnv?.usage || {};
+  const tokensIn = (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0);
+  const tokensOut = u.output_tokens || 0;
+  const cacheReadTokens = u.cache_read_input_tokens || 0;
+  let costUsd = typeof resultEnv?.total_cost_usd === "number" ? resultEnv.total_cost_usd : null;
+  let estimated = false;
+  if (!costUsd) {
+    const p = priceFor(process.env.CLAUDE_MODEL);
+    if (p) { costUsd = (tokensIn / 1e6) * p.in + (tokensOut / 1e6) * p.out; estimated = true; }
+  }
+  return { costUsd: costUsd || 0, estimated, tokensIn, tokensOut, cacheReadTokens, durationMs: resultEnv?.duration_ms || 0 };
+}
+
+// Drain (and clear) the calls accumulated since the last drain. The runner calls
+// this after each agent to attribute cost/latency to that pipeline state.
+export function drainUsage() {
+  return _usageLog.splice(0, _usageLog.length);
+}
+
+// The currently-running `claude` child (at most one per run process, since the pipeline
+// awaits each agent). Lets a stop request kill the in-flight call so it stops billing.
+let _active = null;
+export function killActive() {
+  try { _active?.kill("SIGTERM"); } catch { /* already gone */ }
+}
+
 // Per-agent system prompt = knowledge base + that agent's own prompt (agents/*.md),
 // passed inline via --append-system-prompt (the `-file` variant isn't on every build).
 const sysCache = new Map();
@@ -57,10 +105,14 @@ function systemPrompt(agentPromptPath) {
  * @param {string[]} [o.allowedTools]   - least-privilege tool allowlist (e.g. ["Read","Edit","Bash"])
  * @param {object}   [o.schema]         - JSON Schema → forces structured output, returns a parsed object
  * @param {string}   [o.cwd]            - working dir (a git worktree for implementers); defaults to repo root
- * @param {string}   [o.permissionMode] - "plan" (read-only), "acceptEdits", "bypassPermissions", ...
+ * @param {string}   [o.permissionMode] - "default", "acceptEdits", "bypassPermissions", "plan".
+ *                                         NOTE: avoid "plan" for agents that must return data —
+ *                                         in plan mode Claude presents a plan instead of answering,
+ *                                         yielding an empty result. Constrain read-only agents with
+ *                                         `allowedTools` (e.g. ["Read","Grep","Glob"]) instead.
  * @returns {Promise<string|object>} raw text, or the parsed object when `schema` is given
  */
-export async function runClaude({ prompt, agentPromptPath, allowedTools = [], schema, cwd, permissionMode = "plan" }) {
+export async function runClaude({ prompt, agentPromptPath, allowedTools = [], schema, cwd, permissionMode = "default" }) {
   // Ask for strict JSON in the prompt — more reliable across CLI versions than --json-schema,
   // which returned malformed output (e.g. `{ title }`) on some builds.
   const finalPrompt = schema
@@ -84,6 +136,7 @@ export async function runClaude({ prompt, agentPromptPath, allowedTools = [], sc
 
   return await new Promise((resolve, reject) => {
     const child = spawn("claude", args, { cwd: cwd || ROOT });
+    _active = child;
     let buf = "", resultEnv = null, answer = "", stderr = "";
 
     child.on("error", (e) =>
@@ -103,10 +156,19 @@ export async function runClaude({ prompt, agentPromptPath, allowedTools = [], sc
     });
 
     child.on("close", (code) => {
+      if (_active === child) _active = null;
       if (buf.trim()) onEvent(buf); // trailing partial line, if any
+      // Record + surface usage for this call (best-effort — never blocks the result).
+      if (resultEnv) {
+        const m = usageFromResult(resultEnv);
+        _usageLog.push(m);
+        const tok = ((m.tokensIn + m.tokensOut) / 1000).toFixed(1) + "k tok";
+        const cost = "$" + m.costUsd.toFixed(4) + (m.estimated ? " est." : "");
+        say(c.dim(`◷ ${cost} · ${tok} · ${(m.durationMs / 1000).toFixed(1)}s`));
+      }
       if (resultEnv?.is_error) return reject(new Error(`claude returned an error: ${resultEnv.result ?? ""}`));
       const result = resultEnv?.result ?? answer;
-      if (!result && code !== 0) return reject(new Error(`claude CLI failed (exit ${code}):\n${stderr || "no output"}`));
+      if (!result) return reject(new Error(`claude returned an empty result (exit ${code}). This often means the agent ran in "plan" permission mode and presented a plan instead of answering.${stderr ? "\n" + stderr : ""}`));
       try {
         if (!schema) return resolve(typeof result === "string" ? result : JSON.stringify(result, null, 2));
         return resolve(coerceJson(result));

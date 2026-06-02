@@ -1,6 +1,5 @@
 ---
 name: merge-release
-model: claude-sonnet-4-6
 state: merge_release
 tools:
   allow: [github.merge, deploy.prod, e2e.smoke, github.pr.comment]

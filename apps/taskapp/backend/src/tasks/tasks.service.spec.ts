@@ -25,7 +25,7 @@ describe('TasksService', () => {
   it('lists all created tasks', () => {
     service.create({ title: 'A' });
     service.create({ title: 'B' });
-    expect(service.findAll()).toHaveLength(2);
+    expect(service.findAll().items).toHaveLength(2);
   });
 
   it('marks a task complete', () => {
@@ -55,7 +55,7 @@ describe('TasksService', () => {
       service.create({ title: 'hi', priority: 'high' });
       service.create({ title: 'mid', priority: 'medium' });
 
-      expect(service.findAll().map((t) => t.title)).toEqual(['hi', 'mid', 'lo']);
+      expect(service.findAll().items.map((t) => t.title)).toEqual(['hi', 'mid', 'lo']);
     });
 
     it('keeps insertion order for equal priorities (stable tiebreaker)', () => {
@@ -63,7 +63,7 @@ describe('TasksService', () => {
       service.create({ title: 'second', priority: 'high' });
       service.create({ title: 'third', priority: 'high' });
 
-      expect(service.findAll().map((t) => t.title)).toEqual([
+      expect(service.findAll().items.map((t) => t.title)).toEqual([
         'first',
         'second',
         'third',
@@ -86,10 +86,135 @@ describe('TasksService', () => {
       service.create({ title: 'explicit high', priority: 'high' });
 
       const allowed: TaskPriority[] = ['low', 'medium', 'high'];
-      for (const task of service.findAll()) {
+      for (const task of service.findAll().items) {
         expect(task).toHaveProperty('priority');
         expect(allowed).toContain(task.priority);
       }
+    });
+  });
+
+  describe('findAllForExport', () => {
+    it('returns empty array when store is empty', () => {
+      expect(service.findAllForExport()).toEqual([]);
+    });
+
+    it('returns all tasks sorted high → medium → low then createdAt ascending', () => {
+      service.create({ title: 'lo', priority: 'low' });
+      service.create({ title: 'hi', priority: 'high' });
+      service.create({ title: 'mid', priority: 'medium' });
+
+      const result = service.findAllForExport();
+      expect(result.map((t) => t.title)).toEqual(['hi', 'mid', 'lo']);
+    });
+
+    it('returns full unpaginated list regardless of task count', () => {
+      for (let i = 0; i < 25; i++) service.create({ title: `Task ${i}` });
+      expect(service.findAllForExport()).toHaveLength(25);
+    });
+
+    it('secondary sort by createdAt ascending for equal-priority tasks', () => {
+      const a = service.create({ title: 'first', priority: 'high' });
+      const b = service.create({ title: 'second', priority: 'high' });
+      const result = service.findAllForExport();
+      expect(result[0].id).toBe(a.id);
+      expect(result[1].id).toBe(b.id);
+    });
+  });
+
+  describe('pagination', () => {
+    it('returns page=1, limit=20 by default with correct total', () => {
+      for (let i = 0; i < 5; i++) service.create({ title: `Task ${i}` });
+      const result = service.findAll();
+      expect(result.page).toBe(1);
+      expect(result.limit).toBe(20);
+      expect(result.total).toBe(5);
+      expect(result.items).toHaveLength(5);
+    });
+
+    it('slices correctly for custom page and limit', () => {
+      for (let i = 1; i <= 25; i++) service.create({ title: `Task ${i}` });
+      const result = service.findAll(2, 10);
+      expect(result.page).toBe(2);
+      expect(result.limit).toBe(10);
+      expect(result.total).toBe(25);
+      expect(result.items).toHaveLength(10);
+    });
+
+    it('returns empty items and correct total when page exceeds available data', () => {
+      for (let i = 0; i < 5; i++) service.create({ title: `Task ${i}` });
+      const result = service.findAll(10, 20);
+      expect(result.items).toHaveLength(0);
+      expect(result.total).toBe(5);
+    });
+
+    it('total reflects full store size regardless of page/limit', () => {
+      for (let i = 0; i < 50; i++) service.create({ title: `Task ${i}` });
+      const p1 = service.findAll(1, 20);
+      const p3 = service.findAll(3, 20);
+      expect(p1.total).toBe(50);
+      expect(p3.total).toBe(50);
+      expect(p1.items).toHaveLength(20);
+      expect(p3.items).toHaveLength(10);
+    });
+
+    // AC-1: 25 tasks, default params → exactly 20 items on page 1
+    it('AC-1: 25 tasks, no params → 20 items, total=25, page=1, limit=20', () => {
+      for (let i = 1; i <= 25; i++) service.create({ title: `Task ${i}` });
+      const result = service.findAll();
+      expect(result.items).toHaveLength(20);
+      expect(result.total).toBe(25);
+      expect(result.page).toBe(1);
+      expect(result.limit).toBe(20);
+    });
+
+    // AC-3: 25 tasks, page=3, limit=10 → 5 items (partial last page), total=25
+    it('AC-3: 25 tasks, page=3, limit=10 → 5 items, total=25', () => {
+      for (let i = 1; i <= 25; i++) service.create({ title: `Task ${i}` });
+      const result = service.findAll(3, 10);
+      expect(result.items).toHaveLength(5);
+      expect(result.total).toBe(25);
+      expect(result.page).toBe(3);
+    });
+
+    // AC-4: 25 tasks, page=4, limit=10 → empty items, total still 25
+    it('AC-4: 25 tasks, page=4, limit=10 → empty items, total=25', () => {
+      for (let i = 1; i <= 25; i++) service.create({ title: `Task ${i}` });
+      const result = service.findAll(4, 10);
+      expect(result.items).toHaveLength(0);
+      expect(result.total).toBe(25);
+      expect(result.page).toBe(4);
+    });
+
+    // AC-5: empty store → exact shape
+    it('AC-5: empty store → { items: [], total: 0, page: 1, limit: 20 }', () => {
+      const result = service.findAll();
+      expect(result).toEqual({ items: [], total: 0, page: 1, limit: 20 });
+    });
+
+    // AC-9: paginated slice preserves high→medium→low priority rank
+    it('AC-9: paginated items follow high→medium→low sort order', () => {
+      service.create({ title: 'Low task', priority: 'low' });
+      service.create({ title: 'High task', priority: 'high' });
+      service.create({ title: 'Medium task', priority: 'medium' });
+      service.create({ title: 'High2 task', priority: 'high' });
+      service.create({ title: 'Low2 task', priority: 'low' });
+      const result = service.findAll(1, 5);
+      expect(result.items.map((t) => t.priority)).toEqual([
+        'high',
+        'high',
+        'medium',
+        'low',
+        'low',
+      ]);
+    });
+
+    // AC-10: limit larger than total → all items returned, correct total and limit echoed back
+    it('AC-10: 5 tasks, limit=100 → all 5 items, total=5, limit=100', () => {
+      for (let i = 1; i <= 5; i++) service.create({ title: `Task ${i}` });
+      const result = service.findAll(1, 100);
+      expect(result.items).toHaveLength(5);
+      expect(result.total).toBe(5);
+      expect(result.limit).toBe(100);
     });
   });
 });

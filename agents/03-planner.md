@@ -1,6 +1,5 @@
 ---
 name: planner
-model: claude-opus-4-8
 state: plan
 tools:
   allow: [repo.read]

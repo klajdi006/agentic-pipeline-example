@@ -7,137 +7,143 @@
 <style>
   :root {
     color-scheme: dark;
-    --bg: #0b0f17;
-    --panel: #111827;
-    --panel-2: #0e1420;
-    --border: #1f2937;
-    --border-2: #2b3648;
-    --text: #e5e7eb;
-    --muted: #8b95a5;
-    --accent: #2563eb;
-    --max: 820px;
+    --bg: #0b0f17; --panel: #111827; --panel-2: #0e1420; --border: #1f2937; --border-2: #2b3648;
+    --text: #e5e7eb; --muted: #8b95a5; --accent: #2563eb; --max: 820px;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; }
   body {
-    margin: 0;
-    font: 14px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-    background: var(--bg);
-    color: var(--text);
-    display: flex;
-    flex-direction: column;
+    margin: 0; font: 14px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--bg); color: var(--text); display: flex; flex-direction: column;
   }
-
-  /* ---- header ---- */
   header {
-    padding: 12px 18px;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex: none;
+    padding: 12px 18px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 10px; flex: none;
   }
   header h1 { font-size: 14px; font-weight: 600; margin: 0; }
-  header .tag {
-    font-size: 11px; color: #34d399; border: 1px solid #14532d; background: #052e1b;
-    padding: 1px 8px; border-radius: 999px; font-weight: 600; letter-spacing: .02em;
-  }
+  header .tag { font-size: 11px; color: #34d399; border: 1px solid #14532d; background: #052e1b;
+    padding: 1px 8px; border-radius: 999px; font-weight: 600; }
 
-  /* ---- transcript ---- */
+  #layout { flex: 1; display: flex; min-height: 0; }
+
+  /* ---- sidebar: run history ---- */
+  #sidebar { width: 270px; flex: none; border-right: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; }
+  #sidebar .side-head { padding: 10px; border-bottom: 1px solid var(--border); }
+  #newrun { width: 100%; background: var(--panel); color: var(--text); border: 1px solid var(--border-2);
+    border-radius: 9px; padding: 8px; cursor: pointer; font: inherit; }
+  #newrun:hover { border-color: #3b4d6b; }
+  #runlist { list-style: none; margin: 0; padding: 6px; overflow-y: auto; flex: 1; }
+  #runlist .empty { color: var(--muted); font-size: 12px; padding: 14px; text-align: center; }
+  .run-item { display: flex; gap: 9px; padding: 9px 10px; border-radius: 9px; cursor: pointer; align-items: flex-start; }
+  .run-item:hover { background: var(--panel); }
+  .run-item.active { background: var(--panel); outline: 1px solid var(--border-2); }
+  .run-item .dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; flex: none; background: #6b7280; }
+  .run-item .dot.ok { background: #4ade80; } .run-item .dot.err { background: #f87171; }
+  .run-item .dot.run { background: #fbbf24; animation: pulse 1s ease-in-out infinite; }
+  .run-item .ri-body { flex: 1; min-width: 0; }
+  .ri-stop { flex: none; align-self: center; width: 20px; height: 20px; border-radius: 6px; border: 1px solid var(--border-2);
+    background: transparent; color: var(--muted); cursor: pointer; font-size: 11px; line-height: 1; display: grid; place-items: center; padding: 0; opacity: 0; }
+  .run-item:hover .ri-stop { opacity: 1; } .ri-stop:hover { border-color: #dc2626; color: #f87171; } .ri-stop:disabled { opacity: .4; cursor: default; }
+  .run-item .ri-req { font-size: 13px; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .run-item .ri-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+  /* ---- main ---- */
+  #main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
   #chat { flex: 1; overflow-y: auto; }
   #messages { max-width: var(--max); margin: 0 auto; padding: 24px 18px 8px; display: flex; flex-direction: column; gap: 18px; }
-
   .empty { color: var(--muted); text-align: center; margin: 12vh auto 0; max-width: 460px; }
   .empty .big { font-size: 26px; margin-bottom: 8px; }
-  .empty code { background: var(--panel); padding: 1px 6px; border-radius: 5px; border: 1px solid var(--border); }
+  .empty code, .hint code { background: var(--panel); padding: 1px 6px; border-radius: 5px; border: 1px solid var(--border); }
 
-  /* user request bubble (right-aligned, chat style) */
   .user { align-self: flex-end; max-width: 88%; background: var(--accent); color: #fff;
-          padding: 9px 13px; border-radius: 14px 14px 4px 14px; white-space: pre-wrap; word-break: break-word; }
+    padding: 9px 13px; border-radius: 14px 14px 4px 14px; white-space: pre-wrap; word-break: break-word; }
 
-  /* assistant "terminal" card */
   .run { align-self: stretch; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--panel-2); }
-  .run-head {
-    display: flex; align-items: center; gap: 8px;
-    padding: 7px 12px; border-bottom: 1px solid var(--border);
-    background: var(--panel); font-size: 12px; color: var(--muted);
-  }
+  .run-head { display: flex; align-items: center; gap: 8px; padding: 7px 12px; border-bottom: 1px solid var(--border);
+    background: var(--panel); font-size: 12px; color: var(--muted); }
   .run-head .dot { width: 8px; height: 8px; border-radius: 50%; background: #6b7280; flex: none; }
   .run-head.running .dot { background: #fbbf24; animation: pulse 1s ease-in-out infinite; }
-  .run-head.ok .dot { background: #4ade80; }
-  .run-head.err .dot { background: #f87171; }
+  .run-head.ok .dot { background: #4ade80; } .run-head.err .dot { background: #f87171; }
   @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
-  .run-head .label { font-weight: 600; color: #cbd5e1; }
-  .run-head .status { margin-left: auto; }
-  .term {
-    margin: 0; padding: 14px 16px; max-height: 60vh; overflow: auto;
-    white-space: pre-wrap; word-break: break-word;
-    font: 12.5px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  }
+  .run-head .label { font-weight: 600; color: #cbd5e1; } .run-head .status { margin-left: auto; }
+  .stopbtn { margin-left: 10px; width: 20px; height: 20px; flex: none; border-radius: 6px; border: 1px solid var(--border-2);
+    background: transparent; color: var(--muted); cursor: pointer; font-size: 11px; line-height: 1; display: grid; place-items: center; padding: 0; }
+  .stopbtn:hover { border-color: #dc2626; color: #f87171; } .stopbtn:disabled { opacity: .4; cursor: default; }
+  .term { margin: 0; padding: 14px 16px; max-height: 62vh; overflow: auto; white-space: pre-wrap; word-break: break-word;
+    font: 12.5px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
 
-  /* ANSI colour classes — mirror the runner's palette in runner/run.mjs */
+  .artifacts { display: flex; flex-wrap: wrap; gap: 6px; align-self: stretch; }
+  .artifacts .lbl { color: var(--muted); font-size: 12px; align-self: center; margin-right: 2px; }
+  .chip { font: 12px ui-monospace, Menlo, monospace; background: var(--panel); color: #cbd5e1; border: 1px solid var(--border-2);
+    border-radius: 7px; padding: 4px 9px; cursor: pointer; }
+  .chip:hover { border-color: #3b4d6b; }
+
+  /* ---- metrics ---- */
+  .agg { font-size: 11px; color: var(--muted); margin-top: 9px; line-height: 1.5; }
+  .agg b { color: #cbd5e1; font-weight: 600; }
+  .metrics { align-self: stretch; border: 1px solid var(--border); border-radius: 12px; background: var(--panel-2); overflow: hidden; }
+  .metrics .mh { padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--panel); font-size: 12px; color: #cbd5e1; }
+  .metrics .mh b { color: #fff; } .metrics .mh .est { color: var(--muted); }
+  .metrics table { width: 100%; border-collapse: collapse; font: 12px ui-monospace, Menlo, monospace; }
+  .metrics th, .metrics td { text-align: left; padding: 5px 12px; border-bottom: 1px solid var(--border); color: #cbd5e1; white-space: nowrap; }
+  .metrics th { color: var(--muted); font-weight: 600; }
+  .metrics td.num, .metrics th.num { text-align: right; }
+  .metrics tr:last-child td { border-bottom: 0; }
+  .metrics .esc { padding: 7px 12px; font-size: 12px; color: #fbbf24; border-top: 1px solid var(--border); }
+
   .b { font-weight: 700; } .dim { opacity: .55; }
   .red { color: #f87171; } .green { color: #4ade80; } .amber { color: #fbbf24; }
   .blue { color: #60a5fa; } .purple { color: #c084fc; } .teal { color: #2dd4bf; }
 
-  /* ---- composer (pinned bottom) ---- */
   footer { flex: none; border-top: 1px solid var(--border); background: linear-gradient(transparent, var(--bg) 24px); }
   .composer { max-width: var(--max); margin: 0 auto; padding: 14px 18px 6px; }
-  .box {
-    display: flex; align-items: flex-end; gap: 8px;
-    background: var(--panel); border: 1px solid var(--border-2); border-radius: 16px; padding: 8px 8px 8px 14px;
-  }
+  .box { display: flex; align-items: flex-end; gap: 8px; background: var(--panel); border: 1px solid var(--border-2); border-radius: 16px; padding: 8px 8px 8px 14px; }
   .box:focus-within { border-color: #3b4d6b; }
-  #request {
-    flex: 1; resize: none; border: 0; outline: 0; background: transparent; color: var(--text);
-    font: inherit; max-height: 200px; padding: 6px 0; line-height: 1.5;
-  }
-  #send {
-    flex: none; width: 34px; height: 34px; border-radius: 10px; border: 0; cursor: pointer;
-    background: var(--accent); color: #fff; font-size: 16px; line-height: 1; display: grid; place-items: center;
-  }
-  #send:disabled { opacity: .4; cursor: default; }
-  #send.stop { background: #dc2626; }
+  #request { flex: 1; resize: none; border: 0; outline: 0; background: transparent; color: var(--text); font: inherit; max-height: 200px; padding: 6px 0; line-height: 1.5; }
+  #send { flex: none; width: 34px; height: 34px; border-radius: 10px; border: 0; cursor: pointer; background: var(--accent); color: #fff; font-size: 16px; display: grid; place-items: center; }
+  #send:disabled { opacity: .4; cursor: default; } #send.stop { background: #dc2626; }
   .hint { text-align: center; color: var(--muted); font-size: 11px; padding: 6px 18px 10px; }
-  .hint code { background: var(--panel); padding: 0 5px; border-radius: 4px; border: 1px solid var(--border); }
 </style>
 </head>
 <body>
   <header>
-    <span>🤖</span>
-    <h1>Agentic Pipeline</h1>
-    <span class="tag">LIVE</span>
+    <span>🤖</span><h1>Agentic Pipeline</h1><span class="tag">LIVE</span>
   </header>
 
-  <main id="chat">
-    <div id="messages">
-      <div class="empty" id="empty">
-        <div class="big">🤖</div>
-        Describe a feature to build into <code>apps/taskapp</code>.<br>
-        The pipeline runs live — you'll see every state stream in below.
-      </div>
-    </div>
-  </main>
+  <div id="layout">
+    <aside id="sidebar">
+      <div class="side-head"><button id="newrun">+ New run</button><div id="agg" class="agg"></div></div>
+      <ul id="runlist"><li class="empty">Loading…</li></ul>
+    </aside>
 
-  <footer>
-    <form class="composer" id="composer">
-      <div class="box">
-        <textarea id="request" rows="1" placeholder="Describe the feature… (e.g. “Add a CSV export endpoint for tasks”)"></textarea>
-        <button id="send" type="submit" title="Run">↑</button>
-      </div>
-    </form>
-    <div class="hint">Enter to run · Shift+Enter for newline · each successful run saves its plan to <code>history/</code></div>
-  </footer>
+    <main id="main">
+      <div id="chat"><div id="messages"></div></div>
+      <footer>
+        <form class="composer" id="composer">
+          <div class="box">
+            <textarea id="request" rows="1" placeholder="Describe the feature… (e.g. “Add a CSV export endpoint for tasks”)"></textarea>
+            <button id="send" type="submit" title="Run">↑</button>
+          </div>
+        </form>
+        <div class="hint">Enter to run · Shift+Enter for newline · each run is saved under <code>runs/</code></div>
+      </footer>
+    </main>
+  </div>
 
 <script>
 const $ = (s) => document.querySelector(s);
-const chat = $("#chat");
-const messages = $("#messages");
-const input = $("#request");
-const sendBtn = $("#send");
-let controller = null; // non-null while a run is in flight
+const chat = $("#chat"), messages = $("#messages"), input = $("#request"), sendBtn = $("#send"), runlist = $("#runlist"), agg = $("#agg");
+let mode = "live";       // "live" | "view"  (each live run owns its own controller + card)
+let activeId = null;     // sidebar run currently being viewed (kept highlighted across refreshes)
+let activeRuns = 0;      // in-flight live runs started from this tab (drives faster polling)
+const runsById = {};     // id → full meta (so viewRun can render metrics)
 
-// Convert the runner's ANSI escape codes into coloured <span>s.
+// ---- metric formatters ----
+const fmtUsd = (n) => "$" + (Number(n) || 0).toFixed((Number(n) || 0) < 0.1 ? 4 : 2);
+const fmtTok = (n) => (Number(n) || 0) >= 1000 ? ((Number(n) || 0) / 1000).toFixed(1) + "k" : String(Number(n) || 0);
+const fmtDur = (ms) => { const s = (Number(ms) || 0) / 1000; return s >= 90 ? (s / 60).toFixed(1) + "m" : s.toFixed(0) + "s"; };
+
+// ---- ANSI → HTML ----
 const ANSI = { 1:"b", 2:"dim", 31:"red", 32:"green", 33:"amber", 34:"blue", 35:"purple", 36:"teal" };
 function ansiToHtml(text) {
   const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -153,63 +159,196 @@ function ansiToHtml(text) {
   out += '<span class="' + classes.join(" ") + '">' + esc(text.slice(last)) + "</span>";
   return out;
 }
+const stripMarker = (s) => s.replace(/\x1b\[2m::run [^\n]*?\x1b\[0m\n/g, "");
 
-function autosize() {
-  input.style.height = "auto";
-  input.style.height = Math.min(input.scrollHeight, 200) + "px";
+// ---- composer helpers ----
+function autosize() { input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, 200) + "px"; }
+const atBottom = () => chat.scrollTop + chat.clientHeight >= chat.scrollHeight - 60;
+const scrollDown = () => { chat.scrollTop = chat.scrollHeight; };
+const dotClass = (status) => status === "shipped" ? "ok" : status === "running" ? "run" : "err";
+
+// ---- sidebar: list runs (running ones included — meta.json is written at start) ----
+async function loadRuns(highlightId = activeId) {
+  let runs = [];
+  try { runs = await (await fetch("/api/runs")).json(); } catch { /* ignore */ }
+  renderAggregate(runs);
+  if (!runs.length) { runlist.innerHTML = '<li class="empty">No runs yet.</li>'; return; }
+  runlist.innerHTML = "";
+  for (const r of runs) {
+    runsById[r.id] = r;
+    const li = document.createElement("li");
+    li.className = "run-item" + (r.id === highlightId ? " active" : "");
+    li.dataset.id = r.id;
+    const when = (r.startedAt || "").slice(0, 16).replace("T", " ");
+    const t = r.metrics?.totals;
+    const cost = t && t.claudeCalls ? ` · ${fmtUsd(t.costUsd)} · ${fmtDur(t.durationMs)}` : "";
+    const running = r.status === "running";
+    li.innerHTML = `<span class="dot ${dotClass(r.status)}"></span>
+      <div class="ri-body"><div class="ri-req"></div><div class="ri-meta">${when} · ${r.status || "?"}${cost}</div></div>
+      ${running ? '<button class="ri-stop" title="Stop this run">✕</button>' : ""}`;
+    li.querySelector(".ri-req").textContent = r.request || r.id;
+    li.addEventListener("click", () => viewRun(r.id));
+    const stop = li.querySelector(".ri-stop");
+    if (stop) stop.addEventListener("click", async (e) => {
+      e.stopPropagation(); // don't also open the run
+      stop.disabled = true;
+      try { await fetch(`/api/runs/${encodeURIComponent(r.id)}/stop`, { method: "POST" }); } catch { /* ignore */ }
+      loadRuns();
+    });
+    runlist.appendChild(li);
+  }
 }
-function atBottom() { return chat.scrollTop + chat.clientHeight >= chat.scrollHeight - 60; }
-function scrollDown() { chat.scrollTop = chat.scrollHeight; }
-function setRunning(on) {
-  sendBtn.classList.toggle("stop", on);
-  sendBtn.textContent = on ? "■" : "↑";
-  sendBtn.title = on ? "Stop" : "Run";
+
+// The CTO line: average cost + time per shipped feature, across all shipped runs.
+function renderAggregate(runs) {
+  const shipped = runs.filter((r) => r.status === "shipped" && r.metrics?.totals?.claudeCalls);
+  if (!shipped.length) { agg.textContent = ""; return; }
+  const sum = shipped.reduce((a, r) => {
+    const t = r.metrics.totals;
+    return { cost: a.cost + t.costUsd, dur: a.dur + t.durationMs, est: a.est || t.estimated };
+  }, { cost: 0, dur: 0, est: false });
+  const n = shipped.length;
+  agg.innerHTML = `<b>${n}</b> shipped · avg <b>${fmtUsd(sum.cost / n)}${sum.est ? " est." : ""}</b>/feature · avg <b>${fmtDur(sum.dur / n)}</b>`;
 }
 
-// Build a request bubble + an assistant terminal card; return the card's pieces.
-function addExchange(requestText) {
-  $("#empty")?.remove();
+// Keep the sidebar live: poll faster while runs are in flight (so a run shows as it
+// starts and its status flips when it finishes), slower when idle. Pauses in a hidden tab.
+async function pollTick() {
+  if (!document.hidden) await loadRuns();
+  setTimeout(pollTick, activeRuns > 0 ? 2000 : 6000);
+}
 
-  const user = document.createElement("div");
-  user.className = "user";
-  user.textContent = requestText;
-  messages.appendChild(user);
+// ---- view a past run (read-only) ----
+async function viewRun(id) {
+  mode = "view";
+  activeId = id; // keep it highlighted across sidebar refreshes
+  [...runlist.children].forEach((li) => li.classList.toggle("active", li.dataset?.id === id));
+  messages.innerHTML = "";
 
   const run = document.createElement("div");
   run.className = "run";
-  const head = document.createElement("div");
-  head.className = "run-head running";
-  head.innerHTML = '<span class="dot"></span><span class="label">pipeline</span><span class="status">running…</span>';
-  const term = document.createElement("pre");
-  term.className = "term";
-  run.appendChild(head);
-  run.appendChild(term);
+  run.innerHTML = `<div class="run-head"><span class="dot"></span><span class="label">${id}</span><span class="status"></span></div><pre class="term">loading…</pre>`;
   messages.appendChild(run);
-  scrollDown();
-  return { head, term, status: head.querySelector(".status") };
-}
-
-async function run(requestText) {
-  const { head, term, status } = addExchange(requestText);
-  controller = new AbortController();
-  setRunning(true);
-  let raw = "";
+  const term = run.querySelector(".term");
 
   try {
-    const res = await fetch("/run", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ request: requestText }),
-      signal: controller.signal,
-    });
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
+    const text = await (await fetch(`/api/runs/${encodeURIComponent(id)}/output`)).text();
+    term.innerHTML = ansiToHtml(text);
+    const ok = !/exited with code [^0]/.test(text) && !/\bHALTED\b/.test(text);
+    run.querySelector(".run-head").classList.add(ok ? "ok" : "err");
+    run.querySelector(".status").textContent = ok ? "done" : "halted";
+  } catch { term.textContent = "(no saved output for this run)"; }
+
+  // metrics panel (cost / tokens / latency per state)
+  renderMetrics(runsById[id]);
+
+  // artifact chips
+  try {
+    const files = await (await fetch(`/api/runs/${encodeURIComponent(id)}/artifacts`)).json();
+    if (files.length) {
+      const bar = document.createElement("div");
+      bar.className = "artifacts";
+      bar.innerHTML = '<span class="lbl">artifacts:</span>';
+      for (const f of files) {
+        const chip = document.createElement("button");
+        chip.className = "chip"; chip.textContent = f;
+        chip.addEventListener("click", () => openArtifact(id, f));
+        bar.appendChild(chip);
+      }
+      messages.appendChild(bar);
+    }
+  } catch { /* ignore */ }
+  chat.scrollTop = 0;
+}
+
+// Render the per-run cost/latency breakdown as a table card.
+function renderMetrics(run) {
+  const m = run?.metrics;
+  if (!m?.totals?.claudeCalls) return;
+  const t = m.totals;
+  const rows = (m.perState || []).map((s) =>
+    `<tr><td>${s.state}${s.attempt > 1 ? ` <span class="dim">#${s.attempt}</span>` : ""}</td>
+       <td class="num">${fmtUsd(s.costUsd)}</td>
+       <td class="num">${fmtTok(s.tokensIn)} / ${fmtTok(s.tokensOut)}</td>
+       <td class="num">${fmtDur(s.durationMs)}</td></tr>`).join("");
+  const h = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const esc = (run.escalations || []).map((e) =>
+    `↺ ${h(e.state)} (attempt ${e.attempt}) → ${h(e.target)}: ${h(e.reason)}`).join("<br>");
+  const card = document.createElement("div");
+  card.className = "metrics";
+  card.innerHTML = `
+    <div class="mh"><b>${fmtUsd(t.costUsd)}</b>${t.estimated ? ' <span class="est">est.</span>' : ""}
+      · ${t.claudeCalls} calls · ${fmtTok(t.tokensIn)} in / ${fmtTok(t.tokensOut)} out · ${fmtDur(t.durationMs)}</div>
+    <table>
+      <tr><th>State</th><th class="num">Cost</th><th class="num">Tokens (in/out)</th><th class="num">Time</th></tr>
+      ${rows}
+    </table>
+    ${esc ? `<div class="esc">${esc}</div>` : ""}`;
+  messages.appendChild(card);
+}
+
+async function openArtifact(id, name) {
+  let card = $("#artview");
+  if (!card) { card = document.createElement("div"); card.id = "artview"; card.className = "run"; messages.appendChild(card); }
+  card.innerHTML = `<div class="run-head"><span class="dot ok"></span><span class="label">${name}</span></div><pre class="term">loading…</pre>`;
+  try {
+    const text = await (await fetch(`/api/runs/${encodeURIComponent(id)}/artifact?name=${encodeURIComponent(name)}`)).text();
+    card.querySelector(".term").textContent = text;
+  } catch { card.querySelector(".term").textContent = "(could not load)"; }
+  card.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+// ---- new (empty) live state ----
+function newRun() {
+  const wasView = mode === "view";
+  mode = "live";
+  activeId = null;
+  [...runlist.children].forEach((li) => li.classList?.remove("active"));
+  // Don't destroy in-flight runs: only reset the pane when coming back from history,
+  // or when nothing is on screen. Live/finished cards stay so concurrent runs remain visible.
+  if (wasView || !messages.querySelector(".run")) {
+    messages.innerHTML = `<div class="empty"><div class="big">🤖</div>
+      Describe a feature to build into <code>apps/taskapp</code>.<br>The pipeline runs live — start as many as you like; they run in parallel.</div>`;
+  }
+  input.focus();
+  scrollDown();
+}
+
+// ---- live run ----
+function addExchange(requestText) {
+  $(".empty")?.remove();
+  const user = document.createElement("div");
+  user.className = "user"; user.textContent = requestText;
+  messages.appendChild(user);
+  const run = document.createElement("div");
+  run.className = "run";
+  run.innerHTML = '<div class="run-head running"><span class="dot"></span><span class="label">pipeline</span><span class="status">running…</span><button class="stopbtn" title="Stop this run">✕</button></div><pre class="term"></pre>';
+  messages.appendChild(run);
+  scrollDown();
+  return { head: run.querySelector(".run-head"), term: run.querySelector(".term"), status: run.querySelector(".status"), stopBtn: run.querySelector(".stopbtn") };
+}
+
+// Each run is fully independent: its own AbortController and its own card. Starting a
+// new run never touches another — several can stream at once (the server caps/queues them).
+async function runLive(requestText) {
+  if (mode === "view") messages.innerHTML = ""; // leaving history; live cards (if any) keep streaming server-side
+  mode = "live";
+  const { head, term, status, stopBtn } = addExchange(requestText);
+  const controller = new AbortController();
+  stopBtn.addEventListener("click", () => { controller.abort(); stopBtn.disabled = true; });
+  activeRuns++;
+  loadRuns(); // surface this run in the sidebar right away (its meta.json is written at start)
+  let raw = "";
+  try {
+    const res = await fetch("/run", { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ request: requestText }), signal: controller.signal });
+    const reader = res.body.getReader(), dec = new TextDecoder();
     for (;;) {
       const { value, done } = await reader.read();
       if (done) break;
-      raw += decoder.decode(value, { stream: true });
+      raw += dec.decode(value, { stream: true });
       const stick = atBottom();
-      term.innerHTML = ansiToHtml(raw);
+      term.innerHTML = ansiToHtml(stripMarker(raw));
       if (stick) scrollDown();
     }
     const ok = !/exited with code [^0]/.test(raw) && !/\bHALTED\b/.test(raw);
@@ -217,29 +356,30 @@ async function run(requestText) {
     status.textContent = ok ? "done" : "halted";
   } catch (err) {
     if (err.name === "AbortError") { head.className = "run-head err"; status.textContent = "stopped"; }
-    else { raw += "\n\x1b[31m[client error: " + err.message + "]\x1b[0m\n"; term.innerHTML = ansiToHtml(raw);
-           head.className = "run-head err"; status.textContent = "error"; }
+    else { raw += "\n\x1b[31m[client error: " + err.message + "]\x1b[0m\n"; term.innerHTML = ansiToHtml(stripMarker(raw)); head.className = "run-head err"; status.textContent = "error"; }
   } finally {
-    controller = null;
-    setRunning(false);
+    activeRuns--;
+    stopBtn.remove();
+    loadRuns(); // refresh status (running → shipped/halted) in the sidebar
   }
 }
 
+// Always START a new run. Never aborts an in-flight one (use a card's ✕ to stop that run).
 function submit() {
-  if (controller) { controller.abort(); return; } // button doubles as Stop
   const text = input.value.trim();
   if (!text) return;
-  input.value = "";
-  autosize();
-  run(text);
+  input.value = ""; autosize();
+  runLive(text);
 }
 
 $("#composer").addEventListener("submit", (e) => { e.preventDefault(); submit(); });
+$("#newrun").addEventListener("click", newRun);
 input.addEventListener("input", autosize);
-input.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); }
-});
-input.focus();
+input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } });
+
+newRun();
+loadRuns();
+pollTick(); // keep the sidebar live (running runs appear and update on their own)
 </script>
 </body>
 </html>

@@ -1,7 +1,10 @@
-import { BadRequestException, NotFoundException, ValidationPipe } from '@nestjs/common';
+import 'reflect-metadata';
+import type { AddressInfo } from 'node:net';
+import { BadRequestException, INestApplication, NotFoundException, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { TasksController } from './tasks.controller';
+import { TasksModule } from './tasks.module';
 import { TasksService } from './tasks.service';
 
 /**
@@ -45,19 +48,20 @@ describe('TasksController (TASK-142 contract)', () => {
     // createdAt round-trips as a UTC ISO-8601 string (no local-time storage).
     expect(created.createdAt).toBe(new Date(created.createdAt).toISOString());
     // Persisted through the store.
-    expect(controller.findAll()).toHaveLength(1);
+    expect(controller.findAll({ page: 1, limit: 20 }).items).toHaveLength(1);
   });
 
-  // AC-2 — GET /tasks lists tasks (200) as an array of the documented Task shape.
-  it('AC-2: lists tasks as an array matching the Task shape (id, title, completed, UTC ISO createdAt)', () => {
+  // AC-2 — GET /tasks lists tasks (200) as a paginated response with an items array.
+  it('AC-2: lists tasks as a paginated response matching the Task shape (id, title, completed, UTC ISO createdAt)', () => {
     controller.create({ title: 'First' });
     controller.create({ title: 'Second' });
 
-    const all = controller.findAll();
+    const result = controller.findAll({ page: 1, limit: 20 });
 
-    expect(Array.isArray(all)).toBe(true);
-    expect(all).toHaveLength(2);
-    for (const task of all) {
+    expect(Array.isArray(result.items)).toBe(true);
+    expect(result.items).toHaveLength(2);
+    expect(result.total).toBe(2);
+    for (const task of result.items) {
       expect(task).toMatchObject({
         id: expect.any(String),
         title: expect.any(String),
@@ -95,7 +99,7 @@ describe('TasksController (TASK-142 contract)', () => {
     ).rejects.toThrow(BadRequestException);
 
     // The pipe runs before the handler, so the store is never touched.
-    expect(controller.findAll()).toHaveLength(0);
+    expect(controller.findAll({ page: 1, limit: 20 }).items).toHaveLength(0);
   });
 
   it('AC-5: rejects a missing title with 400 and does not create a task', async () => {
@@ -103,6 +107,169 @@ describe('TasksController (TASK-142 contract)', () => {
       pipe.transform({}, { type: 'body', metatype: CreateTaskDto }),
     ).rejects.toThrow(BadRequestException);
 
-    expect(service.findAll()).toHaveLength(0);
+    expect(service.findAll().items).toHaveLength(0);
+  });
+});
+
+describe('GET /tasks/export (TASK-142 CSV export)', () => {
+  let app: INestApplication;
+  let exportUrl: string;
+  let tasksUrl: string;
+  let tasksService: TasksService;
+
+  beforeAll(async () => {
+    const module = await Test.createTestingModule({
+      imports: [TasksModule],
+    }).compile();
+
+    app = module.createNestApplication();
+    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+    await app.init();
+    await app.listen(0);
+    const { port } = app.getHttpServer().address() as AddressInfo;
+    const base = `http://localhost:${port}`;
+    exportUrl = `${base}/tasks/export`;
+    tasksUrl = `${base}/tasks`;
+    tasksService = app.get(TasksService);
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  afterEach(() => {
+    (tasksService as any).tasks.clear();
+  });
+
+  it('empty repository → 200 with BOM + header only', async () => {
+    const res = await fetch(exportUrl);
+    expect(res.status).toBe(200);
+    // fetch().text() strips the BOM per the WHATWG spec; verify BOM via raw bytes
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    expect(bytes[0]).toBe(0xef); // UTF-8 BOM: EF BB BF
+    expect(bytes[1]).toBe(0xbb);
+    expect(bytes[2]).toBe(0xbf);
+    const text = new TextDecoder('utf-8').decode(bytes); // strips BOM
+    const lines = text.split('\n');
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toBe('id,title,priority,completed,createdAt');
+  });
+
+  it('Content-Type contains text/csv', async () => {
+    const res = await fetch(exportUrl);
+    expect(res.headers.get('content-type')).toContain('text/csv');
+  });
+
+  it('Content-Disposition equals attachment; filename="tasks.csv"', async () => {
+    const res = await fetch(exportUrl);
+    expect(res.headers.get('content-disposition')).toBe('attachment; filename="tasks.csv"');
+  });
+
+  describe('with seeded tasks', () => {
+    const taskCount = 2;
+
+    beforeEach(async () => {
+      const post = (title: string, priority: string) =>
+        fetch(tasksUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title, priority }),
+        });
+      await post('Alpha', 'high');
+      await post('Beta', 'low');
+    });
+
+    it('200 status with tasks present', async () => {
+      const res = await fetch(exportUrl);
+      expect(res.status).toBe(200);
+    });
+
+    it('BOM is present in raw bytes (EF BB BF)', async () => {
+      const bytes = new Uint8Array(await (await fetch(exportUrl)).arrayBuffer());
+      expect(bytes[0]).toBe(0xef);
+      expect(bytes[1]).toBe(0xbb);
+      expect(bytes[2]).toBe(0xbf);
+    });
+
+    it('row count equals task count plus header', async () => {
+      const body = await (await fetch(exportUrl)).text(); // fetch strips BOM
+      const lines = body.split('\n');
+      expect(lines).toHaveLength(taskCount + 1);
+    });
+
+    it('data rows contain correct column values', async () => {
+      const body = await (await fetch(exportUrl)).text(); // fetch strips BOM
+      const lines = body.split('\n');
+      expect(lines[0]).toBe('id,title,priority,completed,createdAt');
+      // first data row (high priority sorts first)
+      const [id, title, priority, completed, createdAt] = lines[1].split(',');
+      expect(id).toBeTruthy();
+      expect(title).toBe('Alpha');
+      expect(priority).toBe('high');
+      expect(completed).toBe('false');
+      expect(new Date(createdAt).toISOString()).toBe(createdAt);
+    });
+
+    it('route does not fall through to the /:id handler', async () => {
+      // If "export" were treated as an :id param, it would 404 (no task with id "export")
+      const res = await fetch(exportUrl);
+      expect(res.status).toBe(200);
+    });
+  });
+
+  describe('CSV injection sanitisation (AC-5)', () => {
+    it.each(['=', '+', '-', '@'])(
+      'title starting with %s is prefixed with a single quote in the exported CSV',
+      async (char) => {
+        await fetch(tasksUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: `${char}FORMULA`, priority: 'medium' }),
+        });
+        const body = await (await fetch(exportUrl)).text(); // fetch strips BOM
+        const lines = body.split('\n');
+        const titleCell = lines[1].split(',')[1];
+        expect(titleCell).toBe(`'${char}FORMULA`);
+      },
+    );
+  });
+
+  describe('sort order (AC-9)', () => {
+    it('rows are ordered high → medium → low by priority rank', async () => {
+      const post = (title: string, priority: string) =>
+        fetch(tasksUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title, priority }),
+        });
+      await post('LowTask', 'low');
+      await post('MediumTask', 'medium');
+      await post('HighTask', 'high');
+
+      const body = await (await fetch(exportUrl)).text(); // fetch strips BOM
+      const lines = body.split('\n');
+      expect(lines).toHaveLength(4); // header + 3 data rows
+      expect(lines[1].split(',')[2]).toBe('high');
+      expect(lines[2].split(',')[2]).toBe('medium');
+      expect(lines[3].split(',')[2]).toBe('low');
+    });
+
+    it('within the same priority, rows are ordered by createdAt ascending', async () => {
+      const post = (title: string) =>
+        fetch(tasksUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title, priority: 'high' }),
+        });
+      await post('First');
+      await post('Second');
+      await post('Third');
+
+      const body = await (await fetch(exportUrl)).text(); // fetch strips BOM
+      const lines = body.split('\n');
+      expect(lines[1].split(',')[1]).toBe('First');
+      expect(lines[2].split(',')[1]).toBe('Second');
+      expect(lines[3].split(',')[1]).toBe('Third');
+    });
   });
 });
