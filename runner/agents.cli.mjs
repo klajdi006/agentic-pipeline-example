@@ -422,6 +422,7 @@ export function makeAgents({ writeArtifact, workspace }) {
       agentPromptPath: 'agents/06-pr-agent.md',
       prompt: `Write a PR description (markdown) for these changes. Reference ${ledger.linear?.identifier || ledger.ticketKey} and check off each acceptance criterion.\n\nDiff:\n${diff.slice(0, 12000)}`,
       allowedTools: READONLY_TOOLS,
+      skipKnowledge: true,
       cwd: APP,
     });
     const md = `${desc}\n\n---\n\n## Diff (\`git diff --cached\`)\n\n\`\`\`diff\n${diff.slice(0, 8000)}\n\`\`\``;
