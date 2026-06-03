@@ -61,16 +61,26 @@ function priceFor(model = "") {
 // when we had to derive cost from token counts rather than the CLI's own figure.
 function usageFromResult(resultEnv) {
   const u = resultEnv?.usage || {};
-  const tokensIn = (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0);
+  // Keep cache_creation separate — lumping it into tokensIn inflates the display
+  // (e.g. implement #1 shows 67k instead of the real ~27k because KNOWLEDGE is cached).
+  const tokensIn = u.input_tokens || 0;
   const tokensOut = u.output_tokens || 0;
+  const cacheCreateTokens = u.cache_creation_input_tokens || 0;
   const cacheReadTokens = u.cache_read_input_tokens || 0;
   let costUsd = typeof resultEnv?.total_cost_usd === "number" ? resultEnv.total_cost_usd : null;
   let estimated = false;
   if (!costUsd) {
     const p = priceFor(process.env.CLAUDE_MODEL);
-    if (p) { costUsd = (tokensIn / 1e6) * p.in + (tokensOut / 1e6) * p.out; estimated = true; }
+    if (p) {
+      // Cache writes: 1.25× input rate. Cache reads: 0.1× input rate.
+      costUsd = (tokensIn / 1e6) * p.in
+              + (cacheCreateTokens / 1e6) * p.in * 1.25
+              + (cacheReadTokens / 1e6) * p.in * 0.1
+              + (tokensOut / 1e6) * p.out;
+      estimated = true;
+    }
   }
-  return { costUsd: costUsd || 0, estimated, tokensIn, tokensOut, cacheReadTokens, durationMs: resultEnv?.duration_ms || 0 };
+  return { costUsd: costUsd || 0, estimated, tokensIn, tokensOut, cacheCreateTokens, cacheReadTokens, durationMs: resultEnv?.duration_ms || 0 };
 }
 
 // Drain (and clear) the calls accumulated since the last drain. The runner calls

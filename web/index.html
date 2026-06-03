@@ -296,11 +296,16 @@ function renderMetrics(run) {
   const m = run?.metrics;
   if (!m?.totals?.claudeCalls) return;
   const t = m.totals;
-  const rows = (m.perState || []).map((s) =>
-    `<tr><td>${s.state}${s.attempt > 1 ? ` <span class="dim">#${s.attempt}</span>` : ""}</td>
+  const rows = (m.perState || []).map((s) => {
+    const cacheParts = [];
+    if (s.cacheCreateTokens > 0) cacheParts.push(`<span class="amber">+${fmtTok(s.cacheCreateTokens)}</span>`);
+    if (s.cacheReadTokens > 0) cacheParts.push(`<span class="teal">${fmtTok(s.cacheReadTokens)}↩</span>`);
+    const cacheCell = cacheParts.length ? ` <span class="dim">${cacheParts.join(" ")}</span>` : "";
+    return `<tr><td>${s.state}${s.attempt > 1 ? ` <span class="dim">#${s.attempt}</span>` : ""}</td>
        <td class="num">${fmtUsd(s.costUsd)}</td>
-       <td class="num">${fmtTok(s.tokensIn)} / ${fmtTok(s.tokensOut)}</td>
-       <td class="num">${fmtDur(s.durationMs)}</td></tr>`).join("");
+       <td class="num">${fmtTok(s.tokensIn)} / ${fmtTok(s.tokensOut)}${cacheCell}</td>
+       <td class="num">${fmtDur(s.durationMs)}</td></tr>`;
+  }).join("");
   const h = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const esc = (run.escalations || []).map((e) =>
     `↺ ${h(e.state)} (attempt ${e.attempt}) → ${h(e.target)}: ${h(e.reason)}`).join("<br>");

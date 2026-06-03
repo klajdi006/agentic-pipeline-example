@@ -74,9 +74,16 @@ const usd = (n) => "$" + n.toFixed(4);
 function writeMetricsArtifact(ledger) {
   const t = metrics.totals;
   const est = t.estimated ? " _(cost estimated from tokens — CLI reported none)_" : "";
-  const cacheNote = t.cacheReadTokens > 0 ? ` · ${k(t.cacheReadTokens)} cache hits` : " · no cache hits";
+  const cacheSummary = [
+    t.cacheCreateTokens > 0 ? `${k(t.cacheCreateTokens)} written` : "",
+    t.cacheReadTokens > 0 ? `${k(t.cacheReadTokens)} read` : "",
+  ].filter(Boolean).join(", ");
+  const cacheNote = cacheSummary ? ` · cache: ${cacheSummary}` : " · no cache hits";
   const rows = metrics.perState.map((s) => {
-    const cache = s.cacheReadTokens > 0 ? ` (${k(s.cacheReadTokens)} cached)` : "";
+    const parts = [];
+    if (s.cacheCreateTokens > 0) parts.push(`+${k(s.cacheCreateTokens)} write`);
+    if (s.cacheReadTokens > 0) parts.push(`${k(s.cacheReadTokens)} read`);
+    const cache = parts.length ? ` (${parts.join(", ")})` : "";
     return `| ${s.state} | ${s.attempt} | ${s.calls} | ${usd(s.costUsd)} | ${k(s.tokensIn)} / ${k(s.tokensOut)}${cache} | ${(s.durationMs / 1000).toFixed(1)}s |`;
   });
   const esc = (ledger?.escalations || []).map((e) =>
@@ -127,19 +134,21 @@ const log = {
 };
 
 // Per-run observability: tokens / cost / latency, attributed to each pipeline state.
-const metrics = { perState: [], totals: { costUsd: 0, tokensIn: 0, tokensOut: 0, cacheReadTokens: 0, durationMs: 0, claudeCalls: 0, estimated: false } };
+const metrics = { perState: [], totals: { costUsd: 0, tokensIn: 0, tokensOut: 0, cacheCreateTokens: 0, cacheReadTokens: 0, durationMs: 0, claudeCalls: 0, estimated: false } };
 function recordState(state, attempt, calls) {
   if (!calls.length) return; // stub states (preview/merge) make no claude calls
   const agg = calls.reduce((a, x) => ({
     costUsd: a.costUsd + x.costUsd, tokensIn: a.tokensIn + x.tokensIn,
-    tokensOut: a.tokensOut + x.tokensOut, cacheReadTokens: a.cacheReadTokens + (x.cacheReadTokens || 0),
+    tokensOut: a.tokensOut + x.tokensOut,
+    cacheCreateTokens: a.cacheCreateTokens + (x.cacheCreateTokens || 0),
+    cacheReadTokens: a.cacheReadTokens + (x.cacheReadTokens || 0),
     durationMs: a.durationMs + x.durationMs, estimated: a.estimated || x.estimated,
-  }), { costUsd: 0, tokensIn: 0, tokensOut: 0, cacheReadTokens: 0, durationMs: 0, estimated: false });
+  }), { costUsd: 0, tokensIn: 0, tokensOut: 0, cacheCreateTokens: 0, cacheReadTokens: 0, durationMs: 0, estimated: false });
   metrics.perState.push({ state, attempt, calls: calls.length, ...agg });
   const t = metrics.totals;
   t.costUsd += agg.costUsd; t.tokensIn += agg.tokensIn; t.tokensOut += agg.tokensOut;
-  t.cacheReadTokens += agg.cacheReadTokens; t.durationMs += agg.durationMs;
-  t.claudeCalls += calls.length; t.estimated = t.estimated || agg.estimated;
+  t.cacheCreateTokens += agg.cacheCreateTokens; t.cacheReadTokens += agg.cacheReadTokens;
+  t.durationMs += agg.durationMs; t.claudeCalls += calls.length; t.estimated = t.estimated || agg.estimated;
 }
 
 // By default the implementer edits apps/taskapp IN PLACE and leaves the changes UNCOMMITTED
