@@ -1,6 +1,7 @@
 ---
 name: implementer
 state: implement
+model: claude-sonnet-4-6
 isolation: worktree
 tools:
   allow: [repo.read, repo.write, build, lint, test.run]

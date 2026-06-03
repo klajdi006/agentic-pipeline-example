@@ -1,6 +1,7 @@
 ---
 name: spec-writer
 state: spec
+model: claude-haiku-4-5
 gate: human-approve-spec
 tools:
   allow: [repo.read, mcp.linear.write]

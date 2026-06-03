@@ -1,0 +1,21 @@
+<h2>Tasks</h2>
+
+@if (data.isLoading()) {
+  <p>Loading…</p>
+} @else {
+  <ul>
+    @for (task of data.value()?.items ?? []; track task.id) {
+      <li>
+        <span>{{ task.title }}</span>
+        <small>({{ task.createdAt | tzDate }})</small>
+        <span class="priority">{{ task.priority }}</span>
+      </li>
+    }
+  </ul>
+}
+
+<nav class="pagination">
+  <button [disabled]="!hasPrev()" (click)="goPrev()">Previous</button>
+  <span>Page {{ page() }}</span>
+  <button [disabled]="!hasNext()" (click)="goNext()">Next</button>
+</nav>

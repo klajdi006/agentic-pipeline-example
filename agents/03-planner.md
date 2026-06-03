@@ -1,6 +1,7 @@
 ---
 name: planner
 state: plan
+model: claude-sonnet-4-6
 tools:
   allow: [repo.read]
   deny: [repo.write, mcp.*, github.*, deploy.*]

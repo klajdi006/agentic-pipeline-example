@@ -1,6 +1,7 @@
 ---
 name: scout
 state: scout
+model: claude-haiku-4-5
 tools:
   allow: [repo.search, repo.read, mcp.linear.read]
   deny: [repo.write, github.*, deploy.*]

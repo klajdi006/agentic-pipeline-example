@@ -222,4 +222,24 @@ describe('TasksService', () => {
       expect(result.limit).toBe(100);
     });
   });
+
+  describe('deadline and assignee', () => {
+    it('AC1: persists deadline and assignee when provided', () => {
+      const task = service.create({
+        title: 'With deadline',
+        deadline: '2026-12-31T23:59:59.000Z',
+        assignee: 'alice',
+      });
+      expect(task.deadline).toBe('2026-12-31T23:59:59.000Z');
+      expect(task.assignee).toBe('alice');
+      expect(service.findOne(task.id).deadline).toBe('2026-12-31T23:59:59.000Z');
+      expect(service.findOne(task.id).assignee).toBe('alice');
+    });
+
+    it('AC2: deadline and assignee default to null when omitted', () => {
+      const task = service.create({ title: 'No deadline or assignee' });
+      expect(task.deadline).toBeNull();
+      expect(task.assignee).toBeNull();
+    });
+  });
 });

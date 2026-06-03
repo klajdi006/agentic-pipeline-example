@@ -1,6 +1,7 @@
 ---
 name: reviewer
 state: review
+model: claude-sonnet-4-6
 tools:
   allow: [repo.read, github.pr.read, github.pr.comment]
   deny: [github.merge, repo.write, deploy.*]

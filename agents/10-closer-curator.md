@@ -1,6 +1,7 @@
 ---
 name: closer-curator
 state: close_curate
+model: claude-haiku-4-5
 tools:
   allow: [mcp.linear.write, repo.read, repo.write, github.pr.create]
   deny: [github.merge, deploy.prod]

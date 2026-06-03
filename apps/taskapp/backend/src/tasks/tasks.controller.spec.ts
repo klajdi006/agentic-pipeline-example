@@ -161,6 +161,81 @@ describe('TasksController (TASK-142 contract)', () => {
       ),
     ).resolves.toMatchObject({ description: 'x'.repeat(2000) });
   });
+
+  // TASK-142 AC3 — invalid deadline rejected with 400.
+  it('TASK-142 AC3: rejects a non-ISO deadline with 400 and does not create a task', async () => {
+    await expect(
+      pipe.transform(
+        { title: 'Bad deadline', deadline: 'not-a-date' },
+        { type: 'body', metatype: CreateTaskDto },
+      ),
+    ).rejects.toThrow(BadRequestException);
+
+    expect(service.findAll().items).toHaveLength(0);
+  });
+
+  // TASK-142 AC3 — assignee exceeding 200 chars rejected with 400.
+  it('TASK-142 AC3: rejects an assignee exceeding 200 chars with 400 and does not create a task', async () => {
+    await expect(
+      pipe.transform(
+        { title: 'Bad assignee', assignee: 'a'.repeat(201) },
+        { type: 'body', metatype: CreateTaskDto },
+      ),
+    ).rejects.toThrow(BadRequestException);
+
+    expect(service.findAll().items).toHaveLength(0);
+  });
+});
+
+// ── TASK-142 restructure (frontend folder reorganisation) ──────────────────────
+// These two cases pin the API contract the Angular TaskListComponent consumes.
+// AC-1 verifies the backend suite is unaffected; AC-2 verifies the exact payload
+// shape after a POST → GET round-trip.
+describe('TasksController (TASK-142 frontend-restructure contract)', () => {
+  let controller: TasksController;
+
+  beforeEach(async () => {
+    const moduleRef = await Test.createTestingModule({
+      controllers: [TasksController],
+      providers: [TasksService],
+    }).compile();
+    controller = moduleRef.get(TasksController);
+  });
+
+  // AC-1 — backend contract is byte-for-byte unchanged after the frontend folder move.
+  it('AC-1: GET /tasks returns tasks with the exact keys the restructured TaskListComponent reads', () => {
+    controller.create({ title: 'Restructure check' });
+    const { items } = controller.findAll({ page: 1, limit: 20 });
+    expect(items).toHaveLength(1);
+    const [task] = items;
+    // Every key the Angular TaskListComponent accesses must be present and correctly typed.
+    expect(typeof task.id).toBe('string');
+    expect(task.id).not.toHaveLength(0);
+    expect(typeof task.title).toBe('string');
+    expect(typeof task.completed).toBe('boolean');
+    expect(typeof task.createdAt).toBe('string');
+    // createdAt must be a valid UTC ISO-8601 string (no local-time drift).
+    expect(task.createdAt).toBe(new Date(task.createdAt).toISOString());
+  });
+
+  // AC-2 — newly-created task has completed:false (not merely any boolean) when
+  // read back through findAll(), matching the exact shape the component binds.
+  it('AC-2: POST /tasks then GET /tasks → completed is strictly false for a newly created task', () => {
+    controller.create({ title: 'New task for AC-2' });
+    const { items } = controller.findAll({ page: 1, limit: 20 });
+    expect(items).toHaveLength(1);
+    const [task] = items;
+    // Must be the literal false, not truthy/any-boolean.
+    expect(task.completed).toBe(false);
+    // Full shape the component destructures:
+    expect(task).toMatchObject({
+      id: expect.any(String),
+      title: 'New task for AC-2',
+      completed: false,
+      createdAt: expect.any(String),
+    });
+    expect(task.createdAt).toBe(new Date(task.createdAt).toISOString());
+  });
 });
 
 describe('GET /tasks/export (TASK-142 CSV export)', () => {

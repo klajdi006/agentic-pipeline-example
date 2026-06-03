@@ -25,6 +25,7 @@
 - Components are standalone and `OnPush` (`ChangeDetectionStrategy.OnPush` on every component).
 - State via `signal()` / `computed()`; no `BehaviorSubject` for new code.
 - **Separate files**: every component has its own `.ts` + `.html` (`templateUrl`) + optional `.css`/`.scss` (`styleUrl`). No inline `template`/`styles`.
+- **One folder per component**: each component lives in its own subfolder named after it (e.g. `features/tasks/task-list/task-list.component.ts`). Never place a component file directly in the feature folder root.
 - Inputs/outputs use the signal APIs — `input()`, `input.required()`, `model()`, `output()` — and signal queries (`viewChild()`, `contentChild()`). Never the `@Input()`/`@Output()`/`@ViewChild` decorators.
 - DI via `inject()`, not constructor parameters.
 - Forms are strongly-typed reactive forms (`NonNullableFormBuilder`); no template-driven forms for non-trivial features.

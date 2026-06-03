@@ -20,6 +20,7 @@ export type TaskStatus = (typeof TaskStatus)[keyof typeof TaskStatus];
 export interface Task {
   id: string;
   title: string;
+  name: string | null;
   completed: boolean;
   priority: TaskPriority;
   status: TaskStatus;

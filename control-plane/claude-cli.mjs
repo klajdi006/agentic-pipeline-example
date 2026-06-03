@@ -99,6 +99,17 @@ function systemPrompt(agentPromptPath, skipKnowledge = false) {
   return sysCache.get(key);
 }
 
+// Extract model from agent markdown frontmatter (model: claude-xxx field).
+function extractModel(agentPromptPath) {
+  try {
+    const content = readFileSync(join(ROOT, agentPromptPath), "utf8");
+    const match = content.match(/^---\n[\s\S]*?\nmodel:\s*([^\n]+)/m);
+    return match ? match[1].trim() : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Run one agent turn through the local `claude` CLI.
  * @param {object}   o
@@ -112,9 +123,10 @@ function systemPrompt(agentPromptPath, skipKnowledge = false) {
  *                                         in plan mode Claude presents a plan instead of answering,
  *                                         yielding an empty result. Constrain read-only agents with
  *                                         `allowedTools` (e.g. ["Read","Grep","Glob"]) instead.
+ * @param {string}   [o.model]          - model override, e.g. "claude-haiku-4-5" (uses agent frontmatter if not set)
  * @returns {Promise<string|object>} raw text, or the parsed object when `schema` is given
  */
-export async function runClaude({ prompt, agentPromptPath, allowedTools = [], schema, cwd, permissionMode = "default", skipKnowledge = false }) {
+export async function runClaude({ prompt, agentPromptPath, allowedTools = [], schema, cwd, permissionMode = "default", skipKnowledge = false, model }) {
   // Ask for strict JSON in the prompt — more reliable across CLI versions than --json-schema,
   // which returned malformed output (e.g. `{ title }`) on some builds.
   const finalPrompt = schema
@@ -134,7 +146,9 @@ export async function runClaude({ prompt, agentPromptPath, allowedTools = [], sc
     "--strict-mcp-config",
   ];
   if (allowedTools.length) args.push("--allowedTools", allowedTools.join(","));
-  if (process.env.CLAUDE_MODEL) args.push("--model", process.env.CLAUDE_MODEL); // e.g. claude-sonnet-4-6
+  // Use explicit model parameter, then agent frontmatter, then environment variable.
+  const resolvedModel = model || extractModel(agentPromptPath) || process.env.CLAUDE_MODEL;
+  if (resolvedModel) args.push("--model", resolvedModel); // e.g. claude-sonnet-4-6
 
   // Progress lines are indented to sit under the runner's "▶ state" header.
   const say = (line) => process.stdout.write("        " + line + "\n");

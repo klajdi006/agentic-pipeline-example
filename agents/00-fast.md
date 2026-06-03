@@ -1,6 +1,7 @@
 ---
 name: fast-implementer
 state: fast_implement
+model: claude-sonnet-4-6
 tools:
   allow: [repo.read, repo.write, test.run]
   deny: [github.*, deploy.*, mcp.linear.write]

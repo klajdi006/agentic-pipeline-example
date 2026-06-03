@@ -1,6 +1,7 @@
 ---
 name: pr-agent
 state: pr
+model: claude-haiku-4-5
 tools:
   allow: [repo.read, github.pr.create, mcp.linear.read]
   deny: [github.merge, deploy.*, repo.write]
