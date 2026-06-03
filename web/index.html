@@ -136,6 +136,7 @@ const chat = $("#chat"), messages = $("#messages"), input = $("#request"), sendB
 let mode = "live";       // "live" | "view"  (each live run owns its own controller + card)
 let activeId = null;     // sidebar run currently being viewed (kept highlighted across refreshes)
 let activeRuns = 0;      // in-flight live runs started from this tab (drives faster polling)
+let liveViewId = null;   // sidebar run being auto-refreshed (null when none)
 const runsById = {};     // id → full meta (so viewRun can render metrics)
 
 // ---- metric formatters ----
@@ -215,34 +216,41 @@ function renderAggregate(runs) {
 // starts and its status flips when it finishes), slower when idle. Pauses in a hidden tab.
 async function pollTick() {
   if (!document.hidden) await loadRuns();
-  setTimeout(pollTick, activeRuns > 0 ? 2000 : 6000);
+  setTimeout(pollTick, (activeRuns > 0 || liveViewId) ? 2000 : 6000);
 }
 
-// ---- view a past run (read-only) ----
+// ---- view a past run (or a live one with auto-refresh) ----
 async function viewRun(id) {
+  liveViewId = null; // stop any previous live-view poll
   mode = "view";
-  activeId = id; // keep it highlighted across sidebar refreshes
+  activeId = id;
   [...runlist.children].forEach((li) => li.classList.toggle("active", li.dataset?.id === id));
   messages.innerHTML = "";
 
+  const isRunning = runsById[id]?.status === "running";
   const run = document.createElement("div");
   run.className = "run";
-  run.innerHTML = `<div class="run-head"><span class="dot"></span><span class="label">${id}</span><span class="status"></span></div><pre class="term">loading…</pre>`;
+  run.innerHTML = `<div class="run-head${isRunning ? " running" : ""}"><span class="dot"></span><span class="label">${id}</span><span class="status">${isRunning ? "running…" : ""}</span></div><pre class="term">loading…</pre>`;
   messages.appendChild(run);
+  const head = run.querySelector(".run-head");
   const term = run.querySelector(".term");
+  const status = run.querySelector(".status");
 
   try {
     const text = await (await fetch(`/api/runs/${encodeURIComponent(id)}/output`)).text();
     term.innerHTML = ansiToHtml(text);
-    const ok = !/exited with code [^0]/.test(text) && !/\bHALTED\b/.test(text);
-    run.querySelector(".run-head").classList.add(ok ? "ok" : "err");
-    run.querySelector(".status").textContent = ok ? "done" : "halted";
+    if (!isRunning) {
+      const ok = !/exited with code [^0]/.test(text) && !/\bHALTED\b/.test(text);
+      head.classList.add(ok ? "ok" : "err");
+      status.textContent = ok ? "done" : "halted";
+    }
   } catch { term.textContent = "(no saved output for this run)"; }
 
-  // metrics panel (cost / tokens / latency per state)
+  // If still running: start live polling — artifacts + metrics appear when it finishes.
+  if (isRunning) { liveViewId = id; liveViewPoll(id, term, head, status); return; }
+
   renderMetrics(runsById[id]);
 
-  // artifact chips
   try {
     const files = await (await fetch(`/api/runs/${encodeURIComponent(id)}/artifacts`)).json();
     if (files.length) {
@@ -259,6 +267,28 @@ async function viewRun(id) {
     }
   } catch { /* ignore */ }
   chat.scrollTop = 0;
+}
+
+// Poll output.log every 2s while a sidebar run is open and still running.
+// When the run finishes, re-calls viewRun to show the full completed view (artifacts + metrics).
+async function liveViewPoll(id, term, head, status) {
+  while (liveViewId === id) {
+    await sleep(2000);
+    if (liveViewId !== id) return;
+    let done = false;
+    try {
+      const runs = await (await fetch("/api/runs")).json();
+      const meta = runs.find((r) => r.id === id);
+      if (meta) { runsById[id] = meta; done = meta.status !== "running"; }
+    } catch { /* keep polling */ }
+    try {
+      const text = await (await fetch(`/api/runs/${encodeURIComponent(id)}/output`)).text();
+      const stick = atBottom();
+      term.innerHTML = ansiToHtml(text);
+      if (stick) scrollDown();
+    } catch { /* keep polling */ }
+    if (done) { liveViewId = null; await viewRun(id); loadRuns(); return; }
+  }
 }
 
 // Render the per-run cost/latency breakdown as a table card.
@@ -300,6 +330,7 @@ async function openArtifact(id, name) {
 
 // ---- new (empty) live state ----
 function newRun() {
+  liveViewId = null; // stop live-view poll when navigating back to composer
   const wasView = mode === "view";
   mode = "live";
   activeId = null;

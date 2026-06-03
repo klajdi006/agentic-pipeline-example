@@ -255,6 +255,27 @@ describe('TasksService', () => {
       expect(summary.DONE).toBe(0);
       expect(summary.IN_PROGRESS).toBe(1);
     });
+
+    // AC-1: each count must be a non-negative integer (not a float or NaN).
+    it('AC-1: all counts are non-negative integers', () => {
+      service.create({ title: 'A' });
+      service.create({ title: 'B' });
+      const summary = service.getSummary();
+      expect(Number.isInteger(summary.BACKLOG)).toBe(true);
+      expect(Number.isInteger(summary.IN_PROGRESS)).toBe(true);
+      expect(Number.isInteger(summary.DONE)).toBe(true);
+      expect(summary.BACKLOG).toBeGreaterThanOrEqual(0);
+      expect(summary.IN_PROGRESS).toBeGreaterThanOrEqual(0);
+      expect(summary.DONE).toBeGreaterThanOrEqual(0);
+    });
+
+    // AC-3: verbatim example from the spec — 3 BACKLOG tasks → BACKLOG: 3.
+    it('AC-3: creating 3 tasks yields BACKLOG: 3, IN_PROGRESS: 0, DONE: 0', () => {
+      service.create({ title: 'Task 1' });
+      service.create({ title: 'Task 2' });
+      service.create({ title: 'Task 3' });
+      expect(service.getSummary()).toEqual({ BACKLOG: 3, IN_PROGRESS: 0, DONE: 0 });
+    });
   });
 
   describe('deadline and assignee', () => {
