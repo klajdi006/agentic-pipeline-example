@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { CreateTaskDto } from './dto/create-task.dto';
+import { UpdateTaskDto } from './dto/update-task.dto';
 import { Task, TaskPriority, TaskStatus } from './task.model';
 
 /** Sort weight for priority ordering: high first, then medium, then low. */
@@ -69,6 +70,12 @@ export class TasksService {
   findOne(id: string): Task {
     const task = this.tasks.get(id);
     if (!task) throw new NotFoundException(`Task ${id} not found`);
+    return task;
+  }
+
+  update(id: string, dto: UpdateTaskDto): Task {
+    const task = this.findOne(id);
+    if (dto.priority !== undefined) task.priority = dto.priority;
     return task;
   }
 

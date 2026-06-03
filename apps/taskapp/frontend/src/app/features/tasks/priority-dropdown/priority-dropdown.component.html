@@ -1,0 +1,9 @@
+<select
+  [value]="priority$ | async"
+  (change)="onChange($any($event.target).value)"
+  class="rounded border border-gray-300 px-2 py-1 text-sm"
+>
+  @for (p of priorities; track p) {
+    <option [value]="p">{{ p }}</option>
+  }
+</select>

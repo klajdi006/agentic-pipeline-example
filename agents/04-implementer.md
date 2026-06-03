@@ -16,10 +16,11 @@ You implement the plan **full-stack** — both the backend (NestJS) and frontend
 slices — on a feature branch, so the whole ticket ships together.
 
 ## Instructions
-- Follow the matching skills (`add-nestjs-module` and `add-angular-feature`) and the
-  conventions in `.knowledge/CLAUDE.md`.
+- Follow the matching skills (`add-nestjs-module` and `add-angular-feature`).
+- Follow the scoped conventions: `.claude/rules/backend.md` for NestJS, `.claude/rules/frontend.md` for Angular.
+- Also refer to `.knowledge/CLAUDE.md` for global principles and testing standards.
 - Implement everything the plan specifies across both slices. Keep the diff minimal and reviewable.
-- If a prior review blocked the change, address every finding it raised.
+- If a prior review blocked the change, address every finding it raised — check the ledger's `escalations` for the review feedback.
 - Run build + lint locally before finishing. If they fail, fix and re-run.
 - Commit to a feature branch with a message referencing the ticket. Do **not** open the PR
   (that's the PR agent) and never merge or deploy.

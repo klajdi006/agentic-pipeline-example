@@ -30,9 +30,14 @@ function toolBrief(name, input = {}) {
 // Claude Code handles prompt caching for this large, stable prefix automatically.
 function loadKnowledge() {
   const parts = [readFileSync(join(ROOT, ".knowledge/CLAUDE.md"), "utf8")];
-  for (const dir of ["skills", "decisions"]) {
-    const base = join(ROOT, ".knowledge", dir);
-    for (const f of readdirSync(base)) parts.push(readFileSync(join(base, f), "utf8"));
+  // Load knowledge subdirectories: skills, decisions, and rules
+  for (const dir of ["skills", "decisions", "rules"]) {
+    const base = join(ROOT, dir === "rules" ? ".claude/rules" : `.knowledge/${dir}`);
+    try {
+      for (const f of readdirSync(base)) parts.push(readFileSync(join(base, f), "utf8"));
+    } catch {
+      // Directory doesn't exist yet (e.g., .claude/rules), skip it
+    }
   }
   return parts.join("\n\n---\n\n");
 }

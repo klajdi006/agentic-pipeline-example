@@ -3,6 +3,7 @@ import type { AddressInfo } from 'node:net';
 import { BadRequestException, INestApplication, NotFoundException, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { CreateTaskDto } from './dto/create-task.dto';
+import { UpdateTaskDto } from './dto/update-task.dto';
 import { TasksController } from './tasks.controller';
 import { TasksModule } from './tasks.module';
 import { TasksService } from './tasks.service';
@@ -184,6 +185,67 @@ describe('TasksController (TASK-142 contract)', () => {
     ).rejects.toThrow(BadRequestException);
 
     expect(service.findAll().items).toHaveLength(0);
+  });
+
+  // AC-1 — PATCH /tasks/:id updates priority and returns the updated task.
+  it('AC-1: PATCH /tasks/:id returns the task with the updated priority', () => {
+    const created = controller.create({ title: 'Prioritize me', priority: 'low' as const });
+    const updated = controller.update(created.id, { priority: 'high' });
+    expect(updated.id).toBe(created.id);
+    expect(updated.priority).toBe('high');
+  });
+
+  it('AC-1: PATCH /tasks/:id persists the priority change', () => {
+    const created = controller.create({ title: 'Persist priority' });
+    controller.update(created.id, { priority: 'low' });
+    expect(controller.findOne(created.id).priority).toBe('low');
+  });
+
+  it('AC-1: PATCH /tasks/:id on a missing task throws NotFoundException', () => {
+    expect(() => controller.update('no-such-id', { priority: 'medium' })).toThrow(NotFoundException);
+  });
+
+  // AC-2 — invalid priority values are rejected with 400.
+  it('AC-2: PATCH /tasks/:id rejects an invalid priority with 400', async () => {
+    await expect(
+      pipe.transform({ priority: 'urgent' }, { type: 'body', metatype: UpdateTaskDto }),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('AC-2: PATCH /tasks/:id accepts a valid priority without error', async () => {
+    await expect(
+      pipe.transform({ priority: 'high' }, { type: 'body', metatype: UpdateTaskDto }),
+    ).resolves.toMatchObject({ priority: 'high' });
+  });
+
+  it('AC-2: PATCH /tasks/:id accepts an empty body (priority is optional)', async () => {
+    await expect(
+      pipe.transform({}, { type: 'body', metatype: UpdateTaskDto }),
+    ).resolves.toEqual({});
+  });
+
+  // AC-1 — returned task carries the full shape, not just id + priority.
+  it('AC-1: PATCH /tasks/:id returns the complete task object including title, completed, and createdAt', () => {
+    const created = controller.create({ title: 'Shape check', priority: 'medium' as const });
+    const updated = controller.update(created.id, { priority: 'low' });
+    expect(updated).toMatchObject({
+      id: created.id,
+      title: 'Shape check',
+      priority: 'low',
+      completed: false,
+      createdAt: expect.any(String),
+      status: expect.any(String),
+    });
+    expect(updated.createdAt).toBe(new Date(updated.createdAt).toISOString());
+  });
+
+  // AC-2 — 'high' is already covered; pin 'low' and 'medium' too.
+  it('AC-2: PATCH /tasks/:id accepts "low" and "medium" as valid priorities', async () => {
+    for (const priority of ['low', 'medium'] as const) {
+      await expect(
+        pipe.transform({ priority }, { type: 'body', metatype: UpdateTaskDto }),
+      ).resolves.toMatchObject({ priority });
+    }
   });
 });
 

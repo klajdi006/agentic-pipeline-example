@@ -337,9 +337,16 @@ export function makeAgents({ writeArtifact, workspace }) {
   };
 
   const closerCurator = async ({ ledger }) => {
+    // Prepare curator prompt with explicit feedback loop instructions
+    const reviewFindings = ledger.artifacts.review?.findings || [];
+    const hasMajorFindings = reviewFindings.some(f => f.severity === 'major' || f.severity === 'blocker');
+    const findingsSummary = reviewFindings.length
+      ? `\n\nReview findings (${reviewFindings.length} total):\n${reviewFindings.map(f => `- [${f.severity}] ${f.rule}: ${f.message} (${f.file})`).join('\n')}`
+      : '';
+
     const out = await runClaude({
       agentPromptPath: 'agents/10-closer-curator.md',
-      prompt: `Release report:\n${ledger.artifacts.merge_release}\n\nReview verdict:\n${JSON.stringify(ledger.artifacts.review, null, 2)}\n\nIf the review surfaced a generalizable rule, propose a unified-diff update to .knowledge/CLAUDE.md. Otherwise reply "No standards update needed." Output the diff (or that line) only.`,
+      prompt: `Release report:\n${ledger.artifacts.merge_release}\n\nReview verdict:\n${JSON.stringify(ledger.artifacts.review, null, 2)}${findingsSummary}\n\n## Curator Task\n\nIf the review found major findings that reflect a generalizable architectural pattern, propose a unified-diff update to the appropriate rule file:\n- Backend patterns (NestJS module structure, validation, queries, etc.): update \`.claude/rules/backend.md\`\n- Frontend patterns (Angular signals, templates, control flow, etc.): update \`.claude/rules/frontend.md\`\n- Cross-cutting principles: update \`.knowledge/CLAUDE.md\` or create a new ADR in \`.knowledge/decisions/\`\n\nOnly propose changes backed by the review findings above. Never invent rules. If no major findings or no clear pattern emerges, reply "No standards update needed."\n\nOutput the diff(s) or reply "No standards update needed."`,
       allowedTools: READONLY_TOOLS,
     });
     writeArtifact('10-standards-update.diff', out);

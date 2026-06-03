@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, Header, Param, Patch, Post, Query } from '@nestjs/common';
 import { tasksToCsv } from './csv.utils';
 import { CreateTaskDto } from './dto/create-task.dto';
+import { UpdateTaskDto } from './dto/update-task.dto';
 import { PaginationQueryDto } from './dto/pagination-query.dto';
 import { TasksService } from './tasks.service';
 
@@ -33,6 +34,11 @@ export class TasksController {
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.tasks.findOne(id);
+  }
+
+  @Patch(':id')
+  update(@Param('id') id: string, @Body() dto: UpdateTaskDto) {
+    return this.tasks.update(id, dto);
   }
 
   @Patch(':id/complete')

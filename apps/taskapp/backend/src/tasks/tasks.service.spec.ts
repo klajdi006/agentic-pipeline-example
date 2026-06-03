@@ -2,6 +2,7 @@ import { NotFoundException } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
 import { CreateTaskDto } from './dto/create-task.dto';
+import { UpdateTaskDto } from './dto/update-task.dto';
 import { TaskPriority } from './task.model';
 import { TasksService } from './tasks.service';
 
@@ -275,6 +276,49 @@ describe('TasksService', () => {
       service.create({ title: 'Task 2' });
       service.create({ title: 'Task 3' });
       expect(service.getSummary()).toEqual({ BACKLOG: 3, IN_PROGRESS: 0, DONE: 0 });
+    });
+  });
+
+  describe('update', () => {
+    it('AC-1: updates priority and returns the task with the new priority', () => {
+      const task = service.create({ title: 'Update me', priority: 'medium' });
+      const updated = service.update(task.id, { priority: 'high' });
+      expect(updated.priority).toBe('high');
+      expect(updated.id).toBe(task.id);
+    });
+
+    it('AC-1: persists the updated priority through findOne', () => {
+      const task = service.create({ title: 'Persist check', priority: 'low' });
+      service.update(task.id, { priority: 'high' });
+      expect(service.findOne(task.id).priority).toBe('high');
+    });
+
+    it('AC-1: update with empty dto leaves priority unchanged', () => {
+      const task = service.create({ title: 'No change', priority: 'medium' });
+      const updated = service.update(task.id, {});
+      expect(updated.priority).toBe('medium');
+    });
+
+    it('AC-1: throws NotFoundException for an unknown id', () => {
+      expect(() => service.update('nonexistent', { priority: 'low' })).toThrow(NotFoundException);
+    });
+
+    it('AC-2: rejects an invalid priority value at the DTO boundary', () => {
+      const dto = plainToInstance(UpdateTaskDto, { priority: 'urgent' });
+      const errors = validateSync(dto);
+      expect(errors.some((e) => e.property === 'priority')).toBe(true);
+    });
+
+    it('AC-2: accepts all valid priority values', () => {
+      for (const priority of ['low', 'medium', 'high'] as const) {
+        const dto = plainToInstance(UpdateTaskDto, { priority });
+        expect(validateSync(dto)).toHaveLength(0);
+      }
+    });
+
+    it('AC-2: accepts an empty body (priority is optional)', () => {
+      const dto = plainToInstance(UpdateTaskDto, {});
+      expect(validateSync(dto)).toHaveLength(0);
     });
   });
 

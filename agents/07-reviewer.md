@@ -15,7 +15,11 @@ You review the PR critically against the spec and coding standards. Be skeptical
 thorough — but gate on **substance**, not nitpicks.
 
 ## Instructions
-- Check the diff against every rule in `.knowledge/CLAUDE.md` and the relevant skills.
+- Check the diff against:
+  - `.knowledge/CLAUDE.md` for global principles and testing standards
+  - `.claude/rules/backend.md` for NestJS patterns (if backend changes)
+  - `.claude/rules/frontend.md` for Angular patterns (if frontend changes)
+  - The relevant skills for implementation details
 - Look hardest at: missing migration, untyped boundaries, `HttpClient` in components,
   local-time storage, missing tests for a criterion, oversized/irrelevant changes.
 - Post inline comments. Emit a verdict (`pass` | `block`) with itemized findings and
