@@ -1,14 +1,15 @@
 // LIVE agents. Contract per agent: async ({ ledger, attempt, log }) => { ok, summary, artifact }.
 //
-//  • scout, spec-writer, planner, reviewer, closer-curator  → real `claude` calls.
-//  • spec-writer / closer-curator                            → create + close a Linear ticket
-//                                                               (if LINEAR_API_KEY is set).
-//  • implementer, test-author, pr-agent                      → operate on the REAL backend at
-//                                                               apps/taskapp/backend. The app must
-//                                                               be installed (node_modules present)
-//                                                               or these throw a clear error.
-//  • preview-e2e, merge-release                              → inline stubs, NOT executed
-//                                                               (need preview infra / real CI/CD).
+//  • scout, spec-and-plan, reviewer, closer-curator         → real `claude` calls.
+//  • spec-and-plan (spec-writer + planner combined)         → reduce process startup overhead.
+//  • spec-and-plan / closer-curator                         → create + close a Linear ticket
+//                                                              (if LINEAR_API_KEY is set).
+//  • implementer, test-author, pr-agent                     → operate on the REAL backend at
+//                                                              apps/taskapp/backend. The app must
+//                                                              be installed (node_modules present)
+//                                                              or these throw a clear error.
+//  • preview-e2e, merge-release                             → inline stubs, NOT executed
+//                                                              (need preview infra / real CI/CD).
 //
 // `npm test` in the backend is the real CI gate: a red suite returns ok:false and the
 // orchestrator routes back to the implementer — exactly the deck's failure loop, for real.
@@ -50,26 +51,30 @@ const SPEC_SCHEMA = {
   type: 'object',
   properties: {
     ticketKey: { type: 'string' },
-    title: { type: 'string' },
-    problem: { type: 'string' },
+    title: { type: 'string', description: 'Brutally short title. Max 6 words.' },
+    problem: { type: 'string', description: 'Single-sentence technical problem statement.' },
     scope: {
       type: 'object',
-      properties: { in: { type: 'array', items: { type: 'string' } }, out: { type: 'array', items: { type: 'string' } } },
-    },
-    changes: {
-      type: 'object',
       properties: {
-        frontend: { type: 'array', items: { type: 'string' } },
-        backend: { type: 'array', items: { type: 'string' } },
-        shared: { type: 'array', items: { type: 'string' } },
+        in: {
+          type: 'array',
+          items: { type: 'string', description: 'Max 3 critical code impacts' },
+          maxItems: 3,
+        }
       },
+      required: ['in']
     },
     acceptanceCriteria: {
       type: 'array',
+      description: 'Keep to maximum 1 to 3 strict technical assertions.',
+      maxItems: 3,
       items: {
         type: 'object',
-        properties: { id: { type: 'string' }, given: { type: 'string' }, when: { type: 'string' }, then: { type: 'string' } },
-        required: ['id', 'given', 'when', 'then'],
+        properties: {
+          id: { type: 'string' },
+          assertion: { type: 'string', description: 'Direct technical condition. e.g. "POST /tasks returns a 201 with priority field".' }
+        },
+        required: ['id', 'assertion'],
       },
     },
   },
@@ -145,20 +150,14 @@ function pastSummary() {
 
 function renderTicket(spec, ticketKey) {
   const ac = (spec.acceptanceCriteria || [])
-    .map((a) => `- **${a.id}** — Given ${a.given}, when ${a.when}, then ${a.then}.`).join('\n');
+    .map((a) => `- **${a.id}**: ${a.assertion}`).join('\n');
   return `# ${spec.ticketKey || ticketKey} — ${spec.title}
 
 **Problem:** ${spec.problem}
 
-**In scope:** ${(spec.scope?.in || []).join('; ')}
-**Out of scope:** ${(spec.scope?.out || []).join('; ')}
+**Scope In:** ${(spec.scope?.in || []).join('; ')}
 
-## Changes
-- **Backend:** ${(spec.changes?.backend || []).join(', ')}
-- **Frontend:** ${(spec.changes?.frontend || []).join(', ')}
-- **Shared:** ${(spec.changes?.shared || []).join(', ')}
-
-## Acceptance criteria
+## Technical Acceptance Criteria
 ${ac}`;
 }
 
@@ -274,10 +273,12 @@ export function makeAgents({ writeArtifact, workspace }) {
     { base: ROOT, dir: 'libs' },
   ].filter(({ base, dir }) => existsSync(join(base, dir)));
 
-  const specWriter = async ({ ledger }) => {
-    // Pre-load relevant files so the spec-writer reasons directly from code,
-    // no tool calls needed — the scout stage is gone.
+  const specAndPlan = async ({ ledger }) => {
+    // Combined spec-writer + planner: reduces process startup overhead by running both
+    // in the same orchestration state. Pre-load files once for both agents.
     const ctx = await preloadContext(ledger.request, SPEC_ROOTS);
+
+    // Step 1: Write spec
     const spec = await runClaude({
       agentPromptPath: 'agents/02-spec-writer.md',
       prompt: `Feature request:\n\n${ledger.request}\n\nEmit the structured spec. ticketKey must be "${ledger.ticketKey}". Acceptance criteria must be testable by Jest against the NestJS backend.\n\nIMPORTANT — scope-match the spec to the request. A small change should have just 1–3 acceptance criteria and a tiny scope. Do NOT invent extra features, edge cases, validation, or refactors the request didn't ask for.${ctx}`,
@@ -288,25 +289,34 @@ export function makeAgents({ writeArtifact, workspace }) {
     const ticketMd = renderTicket(spec, ledger.ticketKey);
     writeArtifact('02-ticket.md', ticketMd);
 
+    // Create Linear ticket if enabled
     let suffix = '';
     if (linearEnabled()) {
       try {
         const issue = await createIssue({ title: `[${spec.ticketKey}] ${spec.title}`, description: ticketMd });
-        if (issue) { ledger.linear = issue; suffix = ` · Linear ${issue.identifier} → ${issue.url}`; }
+        if (issue) { ledger.linear = issue; suffix = ` · Linear ${issue.identifier}`; }
       } catch (e) { suffix = ` · (Linear create failed: ${e.message})`; }
     }
-    return { ok: true, summary: `Drafted ${spec.ticketKey} (${(spec.acceptanceCriteria || []).length} ACs, live)${suffix}`, artifact: spec };
-  };
 
-  const planner = async ({ ledger }) => {
+    // Step 2: Plan (informed by spec)
     const plan = await runClaude({
       agentPromptPath: 'agents/03-planner.md',
-      prompt: `Approved spec:\n${JSON.stringify(ledger.artifacts.spec, null, 2)}\n\nProduce the SMALLEST file-level plan that satisfies the spec, as backend/frontend slices. Backend files live under apps/taskapp/backend/src. Touch only the files that genuinely must change — a single-field change is typically ~2–5 file touches. Do NOT add steps for refactors, new abstractions, or files the spec doesn't require.`,
+      prompt: `Approved spec:\n${JSON.stringify(spec, null, 2)}\n\nProduce the SMALLEST file-level plan that satisfies the spec, as backend/frontend slices. Backend files live under apps/taskapp/backend/src. Touch only the files that genuinely must change — a single-field change is typically ~2–5 file touches. Do NOT add steps for refactors, new abstractions, or files the spec doesn't require.`,
       allowedTools: READONLY_TOOLS,
       schema: PLAN_SCHEMA,
     });
     writeArtifact('03-plan.json', JSON.stringify(plan, null, 2));
-    return { ok: true, summary: `Plan: ${(plan.slices || []).length} slices (live).`, artifact: plan };
+
+    // Store both artifacts for downstream agents
+    ledger.artifacts = ledger.artifacts || {};
+    ledger.artifacts.spec = spec;
+    ledger.artifacts.plan = plan;
+
+    return {
+      ok: true,
+      summary: `Drafted ${spec.ticketKey} (${(spec.acceptanceCriteria || []).length} ACs) + plan (${(plan.slices || []).length} slices)${suffix}`,
+      artifact: { spec, plan }
+    };
   };
 
   const reviewer = async ({ ledger }) => {
@@ -518,8 +528,7 @@ key, and run a post-deploy smoke check.`;
 
   return {
     scout,
-    'spec-writer': specWriter,
-    planner,
+    'spec-and-plan': specAndPlan,
     reviewer,
     'closer-curator': closerCurator,
     implementer: liveImplementer,

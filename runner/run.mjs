@@ -14,6 +14,7 @@ import { STATES, FAST_STATES, FAST_START, FAST_MAX_ATTEMPTS } from "../control-p
 import { classify } from "./classifier.mjs";
 import { drainUsage, killActive } from "../control-plane/claude-cli.mjs";
 import { createWorktree } from "../control-plane/worktree.mjs";
+import { getIssueState, linearEnabled } from "../control-plane/linear.mjs";
 import { makeAgents } from "./agents.cli.mjs";
 import { makeRunId, runDir, firstLine as firstLineOf, writeIndex } from "./runs.mjs";
 
@@ -174,9 +175,26 @@ const agents = Object.fromEntries(
   ])
 );
 
-// The human gates. In this demo they auto-approve (clearly marked); in production these
-// block on a real Linear approval / GitHub PR review.
-async function approveGate(name) {
+// The human gates. For spec approval, poll Linear if enabled; otherwise auto-approve.
+// For PR approval, auto-approve (needs real CI/GitHub review in production).
+async function approveGate(name, ledger) {
+  if (name === "human-approve-spec" && linearEnabled() && ledger?.linear?.id) {
+    console.log(c.purple(`\n✋ HUMAN GATE: Waiting for approval…`));
+    console.log(c.dim(`   Move Linear ticket [${ledger.linear.identifier}] to 'In Progress' or 'Ready for Dev' to resume.`));
+
+    while (true) {
+      await new Promise((resolve) => setTimeout(resolve, 10000));
+      const state = await getIssueState(ledger.linear.id);
+      if (!state) continue;
+
+      const stateName = state.name.toLowerCase();
+      if (state.type === "started" || stateName.includes("approved") || stateName.includes("ready")) {
+        return { approved: true, by: `PO via Linear (Status: ${state.name})` };
+      }
+    }
+  }
+
+  // Fallback: auto-approve for demo or other gates.
   return { approved: true, by: name === "human-approve-spec" ? "PM (auto-approved in demo)" : "Tech lead (auto-approved in demo)" };
 }
 

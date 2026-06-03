@@ -59,6 +59,20 @@ export async function addComment(issueId, body) {
   return d.commentCreate?.comment ?? null;
 }
 
+// Fetch the current workflow state of an issue.
+export async function getIssueState(issueId) {
+  if (!linearEnabled() || !issueId) return null;
+  const d = await gql(
+    `query($id:String!){
+       issue(id:$id){
+         state { id name type }
+       }
+     }`,
+    { id: issueId }
+  );
+  return d.issue?.state ?? null;
+}
+
 // Move an issue to a completed workflow state (returns the state name, or null).
 export async function markDone(issueId) {
   if (!linearEnabled() || !issueId) return null;
