@@ -238,6 +238,58 @@ describe('TasksController (TASK-142 frontend-restructure contract)', () => {
   });
 });
 
+// ── TASK-142: GET /tasks/summary ─────────────────────────────────────────────
+// AC-1: responds with an object whose keys are BACKLOG, IN_PROGRESS, DONE,
+//        each mapped to a non-negative integer.
+// AC-2: empty store → { BACKLOG: 0, IN_PROGRESS: 0, DONE: 0 }.
+// AC-3: counts accurately reflect the number of tasks in each status.
+describe('GET /tasks/summary (TASK-142)', () => {
+  let controller: TasksController;
+  let service: TasksService;
+
+  beforeEach(async () => {
+    const moduleRef = await Test.createTestingModule({
+      controllers: [TasksController],
+      providers: [TasksService],
+    }).compile();
+    controller = moduleRef.get(TasksController);
+    service = moduleRef.get(TasksService);
+  });
+
+  it('AC-1: returns an object with BACKLOG, IN_PROGRESS, DONE keys as non-negative integers', () => {
+    const summary = controller.getSummary();
+    expect(typeof summary.BACKLOG).toBe('number');
+    expect(typeof summary.IN_PROGRESS).toBe('number');
+    expect(typeof summary.DONE).toBe('number');
+    expect(summary.BACKLOG).toBeGreaterThanOrEqual(0);
+    expect(summary.IN_PROGRESS).toBeGreaterThanOrEqual(0);
+    expect(summary.DONE).toBeGreaterThanOrEqual(0);
+  });
+
+  it('AC-2: empty store → { BACKLOG: 0, IN_PROGRESS: 0, DONE: 0 }', () => {
+    expect(controller.getSummary()).toEqual({ BACKLOG: 0, IN_PROGRESS: 0, DONE: 0 });
+  });
+
+  it('AC-3: creating 3 BACKLOG tasks yields BACKLOG: 3 in the summary', () => {
+    controller.create({ title: 'Task 1' });
+    controller.create({ title: 'Task 2' });
+    controller.create({ title: 'Task 3' });
+    const summary = controller.getSummary();
+    expect(summary.BACKLOG).toBe(3);
+    expect(summary.IN_PROGRESS).toBe(0);
+    expect(summary.DONE).toBe(0);
+  });
+
+  it('AC-3: counts reflect mixed statuses accurately', () => {
+    const t1 = controller.create({ title: 'Backlog task' });
+    const t2 = controller.create({ title: 'In-progress task' });
+    const t3 = controller.create({ title: 'Done task' });
+    (service as any).tasks.get(t2.id).status = 'IN_PROGRESS';
+    (service as any).tasks.get(t3.id).status = 'DONE';
+    expect(controller.getSummary()).toEqual({ BACKLOG: 1, IN_PROGRESS: 1, DONE: 1 });
+  });
+});
+
 describe('GET /tasks/export (TASK-142 CSV export)', () => {
   let app: INestApplication;
   let exportUrl: string;
@@ -279,7 +331,7 @@ describe('GET /tasks/export (TASK-142 CSV export)', () => {
     const text = new TextDecoder('utf-8').decode(bytes); // strips BOM
     const lines = text.split('\n');
     expect(lines).toHaveLength(1);
-    expect(lines[0]).toBe('id,title,priority,completed,createdAt,description');
+    expect(lines[0]).toBe('id,title,priority,completed,createdAt,description,deadline,assignee');
   });
 
   it('Content-Type contains text/csv', async () => {
@@ -327,7 +379,7 @@ describe('GET /tasks/export (TASK-142 CSV export)', () => {
     it('data rows contain correct column values', async () => {
       const body = await (await fetch(exportUrl)).text(); // fetch strips BOM
       const lines = body.split('\n');
-      expect(lines[0]).toBe('id,title,priority,completed,createdAt,description');
+      expect(lines[0]).toBe('id,title,priority,completed,createdAt,description,deadline,assignee');
       // first data row (high priority sorts first)
       const [id, title, priority, completed, createdAt] = lines[1].split(',');
       expect(id).toBeTruthy();
@@ -357,7 +409,7 @@ describe('GET /tasks/export (TASK-142 CSV export)', () => {
       });
       const body = await (await fetch(exportUrl)).text();
       const lines = body.split('\n');
-      expect(lines[0]).toBe('id,title,priority,completed,createdAt,description');
+      expect(lines[0]).toBe('id,title,priority,completed,createdAt,description,deadline,assignee');
       const descCell = lines[1].split(',')[5];
       expect(descCell).toBe('My details');
     });

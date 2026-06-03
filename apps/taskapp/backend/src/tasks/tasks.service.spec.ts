@@ -223,6 +223,40 @@ describe('TasksService', () => {
     });
   });
 
+  describe('getSummary', () => {
+    it('returns all zeros for an empty store', () => {
+      expect(service.getSummary()).toEqual({ BACKLOG: 0, IN_PROGRESS: 0, DONE: 0 });
+    });
+
+    it('counts only BACKLOG tasks when all are newly created', () => {
+      service.create({ title: 'A' });
+      service.create({ title: 'B' });
+      expect(service.getSummary()).toEqual({ BACKLOG: 2, IN_PROGRESS: 0, DONE: 0 });
+    });
+
+    it('counts tasks correctly across all three statuses', () => {
+      const t1 = service.create({ title: 'Backlog task' });
+      const t2 = service.create({ title: 'In-progress task' });
+      const t3 = service.create({ title: 'Done task' });
+      const t4 = service.create({ title: 'Done task 2' });
+      // Directly mutate internal status to simulate status transitions
+      (service as any).tasks.get(t2.id).status = 'IN_PROGRESS';
+      (service as any).tasks.get(t3.id).status = 'DONE';
+      (service as any).tasks.get(t4.id).status = 'DONE';
+
+      expect(service.getSummary()).toEqual({ BACKLOG: 1, IN_PROGRESS: 1, DONE: 2 });
+    });
+
+    it('returns zero for a status with no tasks', () => {
+      const t = service.create({ title: 'Only task' });
+      (service as any).tasks.get(t.id).status = 'IN_PROGRESS';
+      const summary = service.getSummary();
+      expect(summary.BACKLOG).toBe(0);
+      expect(summary.DONE).toBe(0);
+      expect(summary.IN_PROGRESS).toBe(1);
+    });
+  });
+
   describe('deadline and assignee', () => {
     it('AC1: persists deadline and assignee when provided', () => {
       const task = service.create({

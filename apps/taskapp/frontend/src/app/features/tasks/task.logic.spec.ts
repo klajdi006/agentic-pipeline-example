@@ -26,8 +26,11 @@ describe('task.logic (TASK-142 contract)', () => {
       title: 'Write the report',
       completed: false,
       priority: 'medium',
+      status: 'BACKLOG',
       createdAt: '2026-05-31T10:00:00.000Z',
       description: null,
+      deadline: null,
+      assignee: null,
     };
 
     it('recognises a freshly created task (id, title, completed=false, UTC ISO createdAt)', () => {
@@ -46,8 +49,8 @@ describe('task.logic (TASK-142 contract)', () => {
   // AC-2 — the list response: an array whose items all match the Task shape.
   describe('AC-2: list response shape', () => {
     const list: Task[] = [
-      { id: 'a', title: 'First', completed: false, priority: 'low', createdAt: '2026-05-31T10:00:00.000Z', description: null },
-      { id: 'b', title: 'Second', completed: true, priority: 'high', createdAt: '2026-05-31T11:00:00.000Z', description: 'A detail' },
+      { id: 'a', title: 'First', completed: false, priority: 'low', status: 'BACKLOG', createdAt: '2026-05-31T10:00:00.000Z', description: null, deadline: null, assignee: null },
+      { id: 'b', title: 'Second', completed: true, priority: 'high', status: 'BACKLOG', createdAt: '2026-05-31T11:00:00.000Z', description: 'A detail', deadline: null, assignee: null },
     ];
 
     it('accepts an array whose every item matches the Task shape', () => {
@@ -68,8 +71,11 @@ describe('task.logic (TASK-142 contract)', () => {
       title: 'Complete me',
       completed: false,
       priority: 'medium',
+      status: 'BACKLOG',
       createdAt: '2026-05-31T10:00:00.000Z',
       description: null,
+      deadline: null,
+      assignee: null,
     };
 
     it('returns a task with completed=true and preserves the other fields', () => {
@@ -85,8 +91,8 @@ describe('task.logic (TASK-142 contract)', () => {
   // AC-4 — deleting a task removes it locally; unknown ids are a no-op.
   describe('AC-4: remove by id', () => {
     const list: Task[] = [
-      { id: 'a', title: 'A', completed: false, priority: 'low', createdAt: '2026-05-31T10:00:00.000Z', description: null },
-      { id: 'b', title: 'B', completed: false, priority: 'high', createdAt: '2026-05-31T11:00:00.000Z', description: null },
+      { id: 'a', title: 'A', completed: false, priority: 'low', status: 'BACKLOG', createdAt: '2026-05-31T10:00:00.000Z', description: null, deadline: null, assignee: null },
+      { id: 'b', title: 'B', completed: false, priority: 'high', status: 'BACKLOG', createdAt: '2026-05-31T11:00:00.000Z', description: null, deadline: null, assignee: null },
     ];
 
     it('drops the matching id and keeps the rest', () => {
@@ -162,10 +168,13 @@ describe('sortTasksForExport (TASK-142 CSV export)', () => {
     title: 'title',
     priority: 'medium',
     completed: false,
+    status: 'BACKLOG',
     createdAt: '2024-01-01T00:00:00.000Z',
     description: null,
+    deadline: null,
+    assignee: null,
     ...overrides,
-  });
+  } as Task);
 
   // AC-9: priority rank ordering
   it('AC-9: orders tasks high → medium → low by priority rank', () => {

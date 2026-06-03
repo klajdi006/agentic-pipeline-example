@@ -298,10 +298,10 @@ export function makeAgents({ writeArtifact, workspace }) {
       } catch (e) { suffix = ` · (Linear create failed: ${e.message})`; }
     }
 
-    // Step 2: Plan (informed by spec)
+    // Step 2: Plan (informed by spec + same file context spec used, so paths are accurate)
     const plan = await runClaude({
       agentPromptPath: 'agents/03-planner.md',
-      prompt: `Approved spec:\n${JSON.stringify(spec, null, 2)}\n\nProduce the SMALLEST file-level plan that satisfies the spec, as backend/frontend slices. Backend files live under apps/taskapp/backend/src. Touch only the files that genuinely must change — a single-field change is typically ~2–5 file touches. Do NOT add steps for refactors, new abstractions, or files the spec doesn't require.`,
+      prompt: `Approved spec:\n${JSON.stringify(spec, null, 2)}\n\nProduce the SMALLEST file-level plan that satisfies the spec, as backend/frontend slices. Backend files live under apps/taskapp/backend/src. Touch only the files that genuinely must change — a single-field change is typically ~2–5 file touches. Do NOT add steps for refactors, new abstractions, or files the spec doesn't require.${ctx}`,
       allowedTools: READONLY_TOOLS,
       schema: PLAN_SCHEMA,
     });
@@ -374,7 +374,7 @@ export function makeAgents({ writeArtifact, workspace }) {
     // implements to spec and edits in place instead of re-reading the repo.
     const ac = ledger.artifacts.spec?.acceptanceCriteria || [];
     const specNote = ac.length
-      ? `\n\nAcceptance criteria to satisfy:\n${ac.map((a) => `- ${a.id}: given ${a.given}, when ${a.when}, then ${a.then}`).join('\n')}`
+      ? `\n\nAcceptance criteria to satisfy:\n${ac.map((a) => `- ${a.id}: ${a.assertion}`).join('\n')}`
       : '';
     const scopeCtx = inScopeContext(ledger.artifacts.plan);
     const summary = await runClaude({

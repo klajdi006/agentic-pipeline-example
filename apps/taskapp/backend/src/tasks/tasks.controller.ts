@@ -25,6 +25,11 @@ export class TasksController {
     return tasksToCsv(this.tasks.findAllForExport());
   }
 
+  @Get('summary')
+  getSummary() {
+    return this.tasks.getSummary();
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.tasks.findOne(id);

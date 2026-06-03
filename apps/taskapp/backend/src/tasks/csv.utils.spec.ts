@@ -7,11 +7,14 @@ function makeTask(overrides: Partial<Task> = {}): Task {
   return {
     id: 'test-id',
     title: 'Test task',
+    name: null,
     priority: TaskPriority.medium,
     status: TaskStatus.BACKLOG,
     completed: false,
     createdAt: '2024-01-01T00:00:00.000Z',
     description: null,
+    deadline: null,
+    assignee: null,
     ...overrides,
   };
 }
@@ -23,7 +26,7 @@ describe('tasksToCsv', () => {
 
   it('first non-BOM line is the exact header row', () => {
     const lines = tasksToCsv([]).replace(BOM, '').split('\n');
-    expect(lines[0]).toBe('id,title,priority,completed,createdAt,description');
+    expect(lines[0]).toBe('id,title,priority,completed,createdAt,description,deadline,assignee');
   });
 
   it('empty input produces only the header (one line after BOM)', () => {
@@ -46,7 +49,7 @@ describe('tasksToCsv', () => {
       createdAt: '2024-06-01T12:00:00.000Z',
     });
     const lines = tasksToCsv([task]).replace(BOM, '').split('\n');
-    expect(lines[1]).toBe('abc-123,Hello world,high,true,2024-06-01T12:00:00.000Z,');
+    expect(lines[1]).toBe('abc-123,Hello world,high,true,2024-06-01T12:00:00.000Z,,,');
   });
 
   // TASK-142 AC-3 — description column with a non-null value.

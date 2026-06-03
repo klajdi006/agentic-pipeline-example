@@ -23,6 +23,7 @@ export class TasksService {
     const task: Task = {
       id: randomUUID(),
       title: dto.title,
+      name: null,
       completed: false,
       priority: dto.priority ?? TaskPriority.medium,
       status: TaskStatus.BACKLOG,
@@ -79,5 +80,13 @@ export class TasksService {
 
   remove(id: string): void {
     if (!this.tasks.delete(id)) throw new NotFoundException(`Task ${id} not found`);
+  }
+
+  getSummary(): { BACKLOG: number; IN_PROGRESS: number; DONE: number } {
+    const counts = { BACKLOG: 0, IN_PROGRESS: 0, DONE: 0 };
+    for (const task of this.tasks.values()) {
+      counts[task.status]++;
+    }
+    return counts;
   }
 }

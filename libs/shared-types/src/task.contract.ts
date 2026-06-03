@@ -17,3 +17,9 @@ export interface TaskResponse {
 }
 
 export type PaginatedTasksResponse = PaginatedResponse<TaskResponse>;
+
+export interface TaskSummaryResponse {
+  BACKLOG: number;
+  IN_PROGRESS: number;
+  DONE: number;
+}
